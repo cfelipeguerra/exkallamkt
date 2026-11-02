@@ -76,8 +76,8 @@ pre{background:var(--chip);padding:10px;border-radius:8px;overflow-x:auto;white-
 export function layout(title: string, body: Raw, opts: { nav?: boolean; flash?: string | null } = {}): string {
   const nav = opts.nav !== false;
   return html`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Exkalla Track</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Vendeuzap</title>
 <style>${raw(CSS)}</style></head><body>
-<header><b>Exkalla Track</b>${nav ? html`<nav><a href="/admin">Clientes</a><a href="/admin/clients/new">Novo cliente</a></nav>` : ''}</header>
+<header><b>Vendeuzap</b>${nav ? html`<nav><a href="/admin">Clientes</a><a href="/admin/clients/new">Novo cliente</a></nav>` : ''}</header>
 <main>${opts.flash ? html`<div class="flash">${opts.flash}</div>` : ''}${body}</main></body></html>`.value;
 }

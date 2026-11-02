@@ -1,5 +1,5 @@
 /*!
- * Exkalla Track — tag de site.
+ * Vendeuzap — tag de site.
  * Instale antes de </body>:
  *   <script src="https://SEU-DOMINIO/t.js?c=SLUG-DO-CLIENTE" async></script>
  *
@@ -18,7 +18,7 @@
   var CLIENT = src.searchParams.get('c');
   var ENDPOINT = src.origin + '/api/click';
   var INVISIBLE = src.searchParams.get('inv') === '1';
-  var KEY = 'xk_attr_' + CLIENT;
+  var KEY = 'vz_attr_' + CLIENT;
   var TTL = 30 * 24 * 3600 * 1000;
   var ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var PARAMS = ['fbclid', 'gclid', 'gbraid', 'wbraid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
@@ -74,7 +74,7 @@
 
   function tagText(text, code) {
     text = text || 'Olá!';
-    return INVISIBLE ? text + invisible(code) : text + ' (cód. XK-' + code + ')';
+    return INVISIBLE ? text + invisible(code) : text + ' (cód. VZ-' + code + ')';
   }
 
   function send(code) {
@@ -112,8 +112,8 @@
 
   var WA = /(wa\.me\/|api\.whatsapp\.com\/send|web\.whatsapp\.com\/send|^whatsapp:)/i;
 
-  /** Gera a URL rastreada para widgets customizados: ExkallaTrack.whatsappUrl('5511999999999', 'Olá') */
-  window.ExkallaTrack = {
+  /** Gera a URL rastreada para widgets customizados: Vendeuzap.whatsappUrl('5511999999999', 'Olá') */
+  window.Vendeuzap = {
     whatsappUrl: function (number, text) {
       var code = newCode();
       send(code);
@@ -125,12 +125,12 @@
     var el = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!el) return;
     var href = el.getAttribute('href') || '';
-    if (!WA.test(href) || el.getAttribute('data-xk') === 'done') return;
+    if (!WA.test(href) || el.getAttribute('data-vz') === 'done') return;
     var code = newCode();
     el.setAttribute('href', rewrite(href, code));
     send(code);
     // Evita marcar duas vezes no mesmo clique; libera para um novo código depois
-    el.setAttribute('data-xk', 'done');
-    setTimeout(function () { el.removeAttribute('data-xk'); el.setAttribute('href', href); }, 1500);
+    el.setAttribute('data-vz', 'done');
+    setTimeout(function () { el.removeAttribute('data-vz'); el.setAttribute('href', href); }, 1500);
   }, true);
 })();

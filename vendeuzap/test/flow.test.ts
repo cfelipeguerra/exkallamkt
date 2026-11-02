@@ -132,7 +132,7 @@ test('tag do site: clique via sendBeacon (text/plain) e atribuição', async () 
     payload: JSON.stringify({ client: 'loja', ref: 'ABCDEF', fbp: 'fb.1.1.2', ga_client_id: '111.222', utm_campaign: 'site-camp', page_url: 'https://loja.com/produto' }),
   });
   assert.equal(r.statusCode, 200);
-  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg('5531977776666', 'Olá! (cód. XK-ABCDEF)') });
+  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg('5531977776666', 'Olá! (cód. VZ-ABCDEF)') });
   const c = db.prepare('SELECT * FROM contacts WHERE phone = ?').get('5531977776666') as Contact;
   assert.equal(c.source, 'tag');
   const bad = await app.inject({ method: 'POST', url: '/api/click', headers: { 'content-type': 'text/plain' }, payload: '{"client":"nao-existe","ref":"ABCDEF"}' });

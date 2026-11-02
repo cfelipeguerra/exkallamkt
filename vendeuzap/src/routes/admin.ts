@@ -59,7 +59,7 @@ function clientForm(c: Partial<Client>, action: string): Raw {
       <label>Etiquetas que indicam lead qualificado</label><input name="qualified_labels" value="${v('qualified_labels')}"></div>
     <div><label><input type="checkbox" name="send_lead_event" value="1" ${check('send_lead_event')} style="width:auto"> Enviar evento de Lead na primeira mensagem</label>
       <label><input type="checkbox" name="invisible_ref" value="1" ${check('invisible_ref')} style="width:auto"> Código de rastreio invisível na mensagem</label>
-      <div class="hint">O modo invisível usa caracteres de largura zero. É mais discreto, mas alguns teclados/apps podem removê-los se o lead editar a mensagem; o modo visível ("cód. XK-…") é mais robusto.</div></div>
+      <div class="hint">O modo invisível usa caracteres de largura zero. É mais discreto, mas alguns teclados/apps podem removê-los se o lead editar a mensagem; o modo visível ("cód. VZ-…") é mais robusto.</div></div>
   </div></fieldset>
 
   <fieldset><legend>Meta (Conversions API)</legend><div class="cols">
@@ -178,7 +178,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/admin')) return;
     if (!checkAuth(req)) {
-      reply.header('WWW-Authenticate', 'Basic realm="Exkalla Track"').code(401).send('Autenticação necessária');
+      reply.header('WWW-Authenticate', 'Basic realm="Vendeuzap"').code(401).send('Autenticação necessária');
     }
   });
 

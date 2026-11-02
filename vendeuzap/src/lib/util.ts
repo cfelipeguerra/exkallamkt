@@ -53,9 +53,9 @@ export function isRefCode(v: unknown): v is string {
   return typeof v === 'string' && new RegExp(`^[${ALPHABET}]{${REF_LENGTH}}$`).test(v);
 }
 
-/** Texto visível anexado à mensagem: "(cód. XK-ABC234)". */
+/** Texto visível anexado à mensagem: "(cód. VZ-ABC234)". */
 export function visibleRef(code: string): string {
-  return `(cód. XK-${code})`;
+  return `(cód. VZ-${code})`;
 }
 
 /** Codifica o código em caracteres invisíveis (zero-width). */
@@ -72,7 +72,7 @@ export function appendRef(message: string, code: string, invisible: boolean): st
 /** Procura o código (visível ou invisível) dentro de um texto recebido. */
 export function extractRef(text: string | null | undefined): string | null {
   if (!text) return null;
-  const visible = text.match(new RegExp(`XK-([${ALPHABET}]{${REF_LENGTH}})`, 'i'));
+  const visible = text.match(new RegExp(`VZ-([${ALPHABET}]{${REF_LENGTH}})`, 'i'));
   if (visible) return visible[1].toUpperCase();
   const zw = text.match(new RegExp(`${ZWB}([${ZW0}${ZW1}]{${REF_LENGTH * 5}})${ZWB}`));
   if (zw) {

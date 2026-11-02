@@ -1,5 +1,5 @@
 {
-  "name": "exkalla-track",
+  "name": "vendeuzap",
   "version": "0.1.0",
   "private": true,
   "description": "Rastreamento de vendas no WhatsApp (Evolution API) com envio de conversões para Meta CAPI, GA4 e Google Ads.",

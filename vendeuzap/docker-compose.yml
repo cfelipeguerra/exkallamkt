@@ -1,12 +1,12 @@
 services:
-  exkalla-track:
+  vendeuzap:
     build: .
     restart: unless-stopped
     env_file: .env
     ports:
       - "3000:3000"
     volumes:
-      - exkalla_data:/app/data
+      - vendeuzap_data:/app/data
 
 volumes:
-  exkalla_data:
+  vendeuzap_data:

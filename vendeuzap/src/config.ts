@@ -16,7 +16,7 @@ export const config = {
   host: env('HOST', '0.0.0.0'),
   /** URL pública desta aplicação, usada para montar links e o webhook da Evolution. */
   baseUrl: env('BASE_URL', 'http://localhost:3000').replace(/\/$/, ''),
-  dbPath: env('DB_PATH', isTest ? ':memory:' : './data/exkalla-track.db'),
+  dbPath: env('DB_PATH', isTest ? ':memory:' : './data/vendeuzap.db'),
 
   admin: {
     user: env('ADMIN_USER', 'admin'),

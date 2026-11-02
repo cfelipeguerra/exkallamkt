@@ -9,4 +9,4 @@ Uma Agência focada em resultados.
 [pixabay](https://pixabay.com/pt/)
 
 ## Projetos
-- [Exkalla Track](exkalla-track/): rastreamento de vendas no WhatsApp (Evolution API) com envio de conversões para Meta CAPI, GA4 e Google Ads.
+- [Vendeuzap](vendeuzap/): rastreamento de vendas no WhatsApp (Evolution API) com envio de conversões para Meta CAPI, GA4 e Google Ads.

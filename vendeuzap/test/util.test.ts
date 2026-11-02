@@ -11,7 +11,7 @@ test('código de rastreio visível e invisível ida e volta', () => {
     assert.equal(extractRef(`texto ${invisibleRef(code)} editado depois`), code);
   }
   assert.equal(extractRef('Olá, quero comprar'), null);
-  assert.equal(extractRef('oi (cód. xk-abcdef)'), 'ABCDEF');
+  assert.equal(extractRef('oi (cód. vz-abcdef)'), 'ABCDEF');
 });
 
 test('extração de valores em reais', () => {

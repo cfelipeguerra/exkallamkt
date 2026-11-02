@@ -10,7 +10,7 @@ RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
 WORKDIR /app
-ENV NODE_ENV=production DB_PATH=/app/data/exkalla-track.db
+ENV NODE_ENV=production DB_PATH=/app/data/vendeuzap.db
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY public ./public

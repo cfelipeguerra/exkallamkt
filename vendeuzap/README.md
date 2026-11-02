@@ -1,4 +1,4 @@
-# Exkalla Track
+# Vendeuzap
 
 Rastreamento de vendas que acontecem no WhatsApp, com devolução das conversões para **Meta (Conversions API)**, **Google Analytics 4 (Measurement Protocol)** e **Google Ads (conversões offline por GCLID)**. Integra com os números dos clientes via **Evolution API**.
 
@@ -11,9 +11,9 @@ Multi-cliente: cada cliente da agência tem sua instância da Evolution, seus pi
  Link rastreável /r/slug (bio, Google, QR) ──┐     │  ctwa_clid / anúncio
  Site com a tag t.js (botões de WhatsApp) ───┤     │  vem na própria mensagem
                                              ▼     ▼
-                código "XK-AB12CD" na 1ª mensagem ─► Evolution API ─► webhook
+                código "VZ-AB12CD" na 1ª mensagem ─► Evolution API ─► webhook
                                                                     │
-                     Exkalla Track: cria o lead com a origem ◄──────┘
+                     Vendeuzap: cria o lead com a origem ◄──────┘
                      detecta a venda (palavra-chave, etiqueta, painel ou API)
                                     │
                  fila com novas tentativas ─► Meta CAPI · GA4 · Google Ads
@@ -27,7 +27,7 @@ Multi-cliente: cada cliente da agência tem sua instância da Evolution, seus pi
 | **Tag no site** `t.js` | Intercepta cliques em links `wa.me`, `api.whatsapp.com` e `whatsapp://` e anexa o código | Tudo acima + cookies `_fbp`, `_fbc`, `_ga` (client_id e session_id do GA4) |
 | **Orgânico** | Nenhum dos anteriores | Só o telefone |
 
-O código vai visível (`(cód. XK-AB12CD)`) ou invisível (caracteres de largura zero), configurável por cliente. O modo visível é mais robusto; o invisível é mais discreto, mas pode se perder se o lead apagar e reescrever a mensagem.
+O código vai visível (`(cód. VZ-AB12CD)`) ou invisível (caracteres de largura zero), configurável por cliente. O modo visível é mais robusto; o invisível é mais discreto, mas pode se perder se o lead apagar e reescrever a mensagem.
 
 Leads com o endereçamento novo do WhatsApp (`@lid`) são resolvidos pelo `remoteJidAlt` enviado pela Evolution.
 
@@ -98,7 +98,7 @@ curl -X POST $BASE_URL/api/v1/sales \
 curl $BASE_URL/api/v1/contacts/5511999999999 -H "Authorization: Bearer <api_token>"
 ```
 
-Para customizar widgets de WhatsApp no site, a tag expõe `ExkallaTrack.whatsappUrl('5511999999999', 'Olá!')`, que retorna a URL já rastreada.
+Para customizar widgets de WhatsApp no site, a tag expõe `Vendeuzap.whatsappUrl('5511999999999', 'Olá!')`, que retorna a URL já rastreada.
 
 ## Rotas
 

@@ -9,7 +9,7 @@ const app = await buildApp(db, { logger: true });
 const stop = startDispatcher(db, config.dispatcherIntervalMs, (m) => app.log.info(m));
 
 await app.listen({ port: config.port, host: config.host });
-app.log.info(`Exkalla Track em ${config.baseUrl}${config.dryRun ? ' (DRY_RUN: eventos não são enviados)' : ''}`);
+app.log.info(`Vendeuzap em ${config.baseUrl}${config.dryRun ? ' (DRY_RUN: eventos não são enviados)' : ''}`);
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, async () => {
