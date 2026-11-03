@@ -2,16 +2,24 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 import { config } from '../config.js';
 import type { DB } from '../db.js';
+import { now } from '../db.js';
+import { processEvent } from '../dispatcher.js';
 import { fetchLabels, setInstanceWebhook } from '../integrations/evolution.js';
 import { googleAdsApiEnabled } from '../integrations/platforms.js';
-import { processEvent } from '../dispatcher.js';
 import { encrypt, normalizePhone, parseMoney, slugify, token } from '../lib/util.js';
-import { clientStats } from '../stats.js';
+import { clientStats, failedEvents } from '../stats.js';
 import { platformsFor, registerSale } from '../tracking.js';
-import type { Client, Contact, TrackEvent, TrackingLink } from '../types.js';
-import { brl, dt, html, layout, raw, SOURCE_LABEL, type Raw } from '../views/html.js';
+import type { Client, Contact, Sale, TrackEvent, TrackingLink } from '../types.js';
+import { campaignsCard, funnelCard, kpiRow, sourcesCard } from '../views/components.js';
+import {
+  ago, brl, copyable, dt, html, initials, layout, raw, type Raw, SOURCE_LABEL, sourceChip, STATUS_PILL,
+} from '../views/html.js';
 
 type Form = Record<string, string | undefined>;
+
+// ---------------------------------------------------------------------------
+// Utilidades
+// ---------------------------------------------------------------------------
 
 function checkAuth(req: FastifyRequest): boolean {
   const h = String(req.headers.authorization || '');
@@ -25,67 +33,249 @@ function checkAuth(req: FastifyRequest): boolean {
 const getClient = (db: DB, id: unknown): Client | undefined =>
   db.prepare('SELECT * FROM clients WHERE id = ?').get(Number(id)) as Client | undefined;
 
-const notFound = (reply: FastifyReply) => reply.code(404).type('text/html').send(layout('Não encontrado', html`<h1>Não encontrado</h1>`));
+const notFound = (reply: FastifyReply) =>
+  reply.code(404).type('text/html').send(layout('Não encontrado', html`<div class="card empty"><b>Página não encontrada</b><a href="/admin">Voltar para clientes</a></div>`));
+
 const back = (reply: FastifyReply, url: string, msg?: string) =>
   reply.redirect(msg ? `${url}${url.includes('?') ? '&' : '?'}msg=${encodeURIComponent(msg)}` : url, 303);
+
+/** Só aceita voltar para páginas do próprio painel. */
+const safeBack = (v: string | undefined, fallback: string) => (v && /^\/admin(\/|$)/.test(v) ? v : fallback);
+
 const flashOf = (req: FastifyRequest) => ((req.query as Form).msg as string | undefined) ?? null;
 
-const STATUS_CLASS: Record<string, string> = { sent: 'ok', pending: 'warn', error: 'err', skipped: 'muted' };
-const STATUS_LABEL: Record<string, string> = { sent: 'enviado', pending: 'pendente', error: 'erro', skipped: 'ignorado' };
-const KIND_LABEL: Record<string, string> = { lead: 'Lead', qualified: 'Lead qualificado', purchase: 'Compra' };
-const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', ga4: 'GA4', gads: 'Google Ads' };
+export function formatPhone(p: string): string {
+  const m = p.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : `+${p}`;
+}
+
+function connection(c: Client): Raw {
+  if (!c.active) return html`<span class="pill"><span class="dot"></span>Pausado</span>`;
+  if (!c.last_webhook_at) return html`<span class="pill pill-warn"><span class="dot"></span>Aguardando conexão</span>`;
+  const idle = now() - c.last_webhook_at;
+  if (idle < 2 * 86400) return html`<span class="pill pill-ok"><span class="dot"></span>Conectado</span>`;
+  return html`<span class="pill pill-warn" title="Última mensagem recebida ${ago(c.last_webhook_at)}"><span class="dot"></span>Sem mensagens ${ago(c.last_webhook_at)}</span>`;
+}
+
+const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', ga4: 'Google Analytics', gads: 'Google Ads' };
+const DETECTED_LABEL: Record<string, string> = {
+  manual: 'Marcada no painel',
+  keyword: 'Mensagem de confirmação',
+  label: 'Etiqueta do WhatsApp',
+  api: 'Integração (API)',
+};
+
+// ---------------------------------------------------------------------------
+// Estrutura da página do cliente
+// ---------------------------------------------------------------------------
+
+type Tab = 'overview' | 'contacts' | 'sales' | 'events' | 'links' | 'setup' | 'edit';
+
+function clientPage(db: DB, c: Client, tab: Tab, body: Raw, flash: string | null): string {
+  const failed = failedEvents(db, c.id);
+  const tabs: [Tab, string, string][] = [
+    ['overview', 'Visão geral', ''],
+    ['contacts', 'Conversas', '/contacts'],
+    ['sales', 'Vendas', '/sales'],
+    ['events', 'Envios', '/events'],
+    ['links', 'Links', '/links'],
+    ['setup', 'Instalação', '/setup'],
+    ['edit', 'Configurações', '/edit'],
+  ];
+  const head = html`
+  <a class="back" href="/admin">← Clientes</a>
+  <div class="page-head"><div><h1>${c.name}</h1>
+    <div class="row sub">${connection(c)}<span>WhatsApp ${formatPhone(c.whatsapp_number)}</span></div></div>
+    <a class="btn ghost" href="/report/${c.report_token}" target="_blank" rel="noopener">Relatório do cliente ↗</a></div>
+  <nav class="tabs">${tabs.map(
+    ([key, label, path]) =>
+      html`<a class="${tab === key ? 'on' : ''}" href="/admin/clients/${c.id}${path}">${label}${key === 'events' && failed ? html`<span class="count" title="Envios com falha">${failed}</span>` : ''}</a>`,
+  )}</nav>`;
+  return layout(c.name, html`${head}${body}`, { flash });
+}
+
+// ---------------------------------------------------------------------------
+// Componentes
+// ---------------------------------------------------------------------------
+
+function saleButton(contact: Contact, client: Client, backUrl: string): Raw {
+  const suggested = contact.last_quoted_value ?? client.default_sale_value;
+  return html`<details class="pop"><summary class="btn ghost sm">${contact.status === 'customer' ? '+ Nova venda' : 'Registrar venda'}</summary>
+    <div class="pop-body"><form method="post" action="/admin/contacts/${contact.id}/sale">
+      <input type="hidden" name="back" value="${backUrl}">
+      <label for="v${contact.id}">Valor da venda (${client.currency})</label>
+      <input id="v${contact.id}" name="value" inputmode="decimal" value="${String(suggested || '').replace('.', ',')}" required>
+      ${contact.last_quoted_value ? html`<p class="help">Sugerido a partir do último valor enviado na conversa.</p>` : ''}
+      <div class="row" style="margin-top:12px"><button>Confirmar venda</button></div>
+    </form></div></details>`;
+}
+
+type ContactRow = Contact & { campaign: string | null; sales_total: number | null };
+
+function contactsTable(rows: ContactRow[], client: Client, backUrl: string): Raw {
+  if (!rows.length) {
+    return html`<div class="empty"><b>Nenhuma conversa encontrada</b>As conversas aparecem aqui assim que o WhatsApp do cliente receber mensagens.</div>`;
+  }
+  return html`<div class="table-wrap"><table>
+  <tr><th>Contato</th><th>Origem</th><th>Situação</th><th>Última mensagem</th><th class="num">Comprou</th><th></th></tr>
+  ${rows.map(
+    (c) => html`<tr>
+      <td><div class="person"><span class="avatar">${initials(c.push_name)}</span><div><b>${c.push_name || 'Sem nome'}</b><span>${formatPhone(c.phone)}</span></div></div></td>
+      <td>${sourceChip(c.source)}${c.campaign ? html`<div class="muted small" style="margin-top:3px">${c.campaign}</div>` : ''}</td>
+      <td>${STATUS_PILL[c.status]}</td>
+      <td class="muted" title="${dt(c.last_message_at)}">${ago(c.last_message_at)}</td>
+      <td class="num">${c.sales_total ? html`<b>${brl(c.sales_total, client.currency)}</b>` : html`<span class="muted">—</span>`}</td>
+      <td class="num">${saleButton(c, client, backUrl)}</td></tr>`,
+  )}</table></div>`;
+}
+
+const CONTACT_SELECT = `SELECT c.*, COALESCE(k.utm_campaign, c.ad_title) campaign,
+  (SELECT SUM(value) FROM sales s WHERE s.contact_id = c.id) sales_total
+  FROM contacts c LEFT JOIN clicks k ON k.id = c.click_id`;
+
+interface EventGroup {
+  event_id: string;
+  kind: TrackEvent['kind'];
+  created_at: number;
+  phone: string | null;
+  push_name: string | null;
+  value: number | null;
+  currency: string | null;
+  rows: TrackEvent[];
+}
+
+function loadEventGroups(db: DB, clientId: number, status: string, limit: number): EventGroup[] {
+  const ids = db
+    .prepare(
+      `SELECT event_id FROM events WHERE client_id = ?
+       GROUP BY event_id HAVING (? = '' OR SUM(status = ?) > 0) ORDER BY MAX(id) DESC LIMIT ?`,
+    )
+    .all(clientId, status, status, limit) as { event_id: string }[];
+  const rowsStmt = db.prepare(
+    `SELECT e.*, c.phone, c.push_name, s.value, s.currency FROM events e
+     LEFT JOIN contacts c ON c.id = e.contact_id LEFT JOIN sales s ON s.id = e.sale_id
+     WHERE e.client_id = ? AND e.event_id = ? ORDER BY CASE e.platform WHEN 'meta' THEN 1 WHEN 'ga4' THEN 2 ELSE 3 END`,
+  );
+  return ids.map(({ event_id }) => {
+    const rows = rowsStmt.all(clientId, event_id) as (TrackEvent & { phone: string; push_name: string; value: number; currency: string })[];
+    const f = rows[0];
+    return { event_id, kind: f.kind, created_at: f.created_at, phone: f.phone, push_name: f.push_name, value: f.value, currency: f.currency, rows };
+  });
+}
+
+function platformPill(e: TrackEvent): Raw {
+  const name = PLATFORM_LABEL[e.platform];
+  switch (e.status) {
+    case 'sent':
+      return html`<span class="pill pill-ok" title="Enviado ${dt(e.sent_at)}">✓ ${name}</span>`;
+    case 'error':
+      return html`<span class="pill pill-err" title="${e.detail || 'Falhou'}">✕ ${name}</span>`;
+    case 'pending':
+      return html`<span class="pill pill-warn" title="${e.attempts ? `Nova tentativa ${ago(e.next_attempt_at)}` : 'Na fila'}">… ${name}</span>`;
+    default:
+      return html`<span class="pill" title="Não se aplica: ${e.detail || ''}">– ${name}</span>`;
+  }
+}
+
+function eventsTable(groups: EventGroup[], clientId: number, compact = false): Raw {
+  if (!groups.length) {
+    return html`<div class="empty"><b>Nenhuma conversão enviada ainda</b>Cada conversa nova e cada venda gera um envio para as plataformas configuradas.</div>`;
+  }
+  return html`<div class="table-wrap"><table>
+  <tr><th>Quando</th><th>Conversão</th><th>Contato</th><th>Enviado para</th><th></th></tr>
+  ${groups.map((g) => {
+    const failed = g.rows.some((r) => r.status === 'error');
+    const kind = g.kind === 'purchase'
+      ? html`<b>Venda</b> <span class="muted">${g.value !== null ? brl(g.value, g.currency || 'BRL') : ''}</span>`
+      : g.kind === 'qualified' ? html`Lead qualificado` : html`Nova conversa`;
+    return html`<tr>
+      <td class="muted" title="${dt(g.created_at)}">${ago(g.created_at)}</td>
+      <td>${kind}</td>
+      <td>${g.push_name || (g.phone ? formatPhone(g.phone) : '—')}</td>
+      <td><div class="platforms">${g.rows.map(platformPill)}</div>
+        ${compact ? '' : html`<details class="tech"><summary>Detalhes técnicos</summary>
+          ${g.rows.map((r) => html`<div class="small" style="margin-top:8px"><b>${PLATFORM_LABEL[r.platform]}</b>: ${r.detail || r.status}${r.attempts > 1 ? ` (${r.attempts} tentativas)` : ''}
+            ${r.request ? html`<pre>${r.request}</pre>` : ''}${r.response ? html`<pre>${r.response}</pre>` : ''}</div>`)}
+        </details>`}</td>
+      <td class="num">${failed ? html`<form method="post" action="/admin/events/${g.rows.find((r) => r.status === 'error')!.id}/retry"><input type="hidden" name="back" value="/admin/clients/${clientId}/events"><button class="ghost sm">Tentar de novo</button></form>` : ''}</td></tr>`;
+  })}</table></div>`;
+}
 
 // ---------------------------------------------------------------------------
 // Formulário de cliente
 // ---------------------------------------------------------------------------
 
-function clientForm(c: Partial<Client>, action: string): Raw {
+function clientForm(c: Partial<Client>, action: string, submitLabel: string): Raw {
   const v = (k: keyof Client) => (c[k] ?? '') as string | number;
-  const secret = (k: keyof Client) => (c[k] ? 'configurado — deixe em branco para manter' : '');
+  const saved = (k: keyof Client) => (c[k] ? '•••••••• (salvo, deixe em branco para manter)' : '');
   const check = (k: keyof Client) => (c[k] ? raw('checked') : '');
-  return html`<form method="post" action="${action}">
-  <fieldset><legend>Cliente</legend><div class="cols">
-    <div><label>Nome</label><input name="name" required value="${v('name')}"></div>
-    <div><label>Número do WhatsApp (com DDI)</label><input name="whatsapp_number" required placeholder="5511999999999" value="${v('whatsapp_number')}"></div>
-    <div><label>Nome da instância na Evolution</label><input name="evolution_instance" required value="${v('evolution_instance')}"></div>
-    <div><label>Moeda</label><input name="currency" maxlength="3" value="${v('currency') || 'BRL'}"></div>
-    <div><label>Ticket padrão (quando a venda não tiver valor)</label><input name="default_sale_value" value="${v('default_sale_value') || 0}"></div>
-  </div></fieldset>
+  const section = (title: string, desc: string, fields: Raw) =>
+    html`<div class="section"><div><h3>${title}</h3><p>${desc}</p></div><div>${fields}</div></div>`;
 
-  <fieldset><legend>Detecção de vendas</legend><div class="cols">
-    <div><label>Palavras-chave (mensagens enviadas pela empresa)</label><textarea name="sale_keywords" rows="3">${v('sale_keywords')}</textarea>
-      <div class="hint">Separe por | ou vírgula. Ex.: pagamento confirmado|pedido confirmado. O valor é lido da própria mensagem ("R$ 150,00", "total: 150") ou do último valor citado pela empresa na conversa.</div></div>
-    <div><label>Etiquetas do WhatsApp Business que indicam venda</label><input name="sale_labels" value="${v('sale_labels')}">
-      <label>Etiquetas que indicam lead qualificado</label><input name="qualified_labels" value="${v('qualified_labels')}"></div>
-    <div><label><input type="checkbox" name="send_lead_event" value="1" ${check('send_lead_event')} style="width:auto"> Enviar evento de Lead na primeira mensagem</label>
-      <label><input type="checkbox" name="invisible_ref" value="1" ${check('invisible_ref')} style="width:auto"> Código de rastreio invisível na mensagem</label>
-      <div class="hint">O modo invisível usa caracteres de largura zero. É mais discreto, mas alguns teclados/apps podem removê-los se o lead editar a mensagem; o modo visível ("cód. VZ-…") é mais robusto.</div></div>
-  </div></fieldset>
+  return html`<form method="post" action="${action}" class="card">
+  ${section('Dados do cliente', 'Identificação e o número de WhatsApp que será acompanhado.', html`
+    <label for="f-name">Nome do cliente</label><input id="f-name" name="name" required value="${v('name')}" placeholder="Ex.: Ótica Visão Clara">
+    <div class="form-cols">
+      <div><label for="f-wa">WhatsApp</label><input id="f-wa" name="whatsapp_number" required placeholder="(11) 99999-9999" value="${c.whatsapp_number ? formatPhone(c.whatsapp_number) : ''}"></div>
+      <div><label for="f-inst">Nome da instância no WhatsApp Manager</label><input id="f-inst" name="evolution_instance" required value="${v('evolution_instance')}" placeholder="Ex.: otica-visao">
+        <p class="help">Exatamente como aparece na Evolution API.</p></div>
+    </div>`)}
 
-  <fieldset><legend>Meta (Conversions API)</legend><div class="cols">
-    <div><label>ID do Pixel / Dataset</label><input name="meta_pixel_id" value="${v('meta_pixel_id')}"></div>
-    <div><label>Token de acesso (CAPI)</label><input name="meta_access_token" type="password" autocomplete="off" placeholder="${secret('meta_access_token')}"></div>
-    <div><label>Código de evento de teste (opcional)</label><input name="meta_test_event_code" value="${v('meta_test_event_code')}"></div>
-    <div><label>ID da conta WhatsApp Business (WABA) — opcional</label><input name="meta_waba_id" value="${v('meta_waba_id')}">
-      <div class="hint">Preencha somente se o número estiver na WhatsApp Business Platform e o dataset estiver vinculado à WABA. Com isso, leads de anúncio CTWA são enviados no modo oficial "business_messaging" com ctwa_clid.</div></div>
-  </div></fieldset>
+  ${section('Como identificar uma venda', 'O Vendeuzap marca a venda automaticamente quando uma destas coisas acontece na conversa.', html`
+    <label for="f-kw">Frases de confirmação enviadas pela equipe</label>
+    <textarea id="f-kw" name="sale_keywords" rows="2">${v('sale_keywords')}</textarea>
+    <p class="help">Separe por "|". Ex.: pagamento confirmado|pedido confirmado. O valor é lido da própria conversa ("Total: R$ 150,00").</p>
+    <div class="form-cols">
+      <div><label for="f-sl">Etiqueta de venda no WhatsApp Business</label><input id="f-sl" name="sale_labels" value="${v('sale_labels')}" placeholder="Venda"></div>
+      <div><label for="f-ql">Etiqueta de lead qualificado</label><input id="f-ql" name="qualified_labels" value="${v('qualified_labels')}" placeholder="Qualificado"></div>
+    </div>
+    <label for="f-dv">Valor usado quando a conversa não informa o valor</label>
+    <input id="f-dv" name="default_sale_value" inputmode="decimal" value="${String(v('default_sale_value') || 0).replace('.', ',')}" style="max-width:200px">
+    <details class="more"><summary>Mais opções</summary>
+      <label for="f-cur">Moeda</label><input id="f-cur" name="currency" maxlength="3" value="${v('currency') || 'BRL'}" style="max-width:120px">
+      <label class="check"><input type="checkbox" name="send_lead_event" value="1" ${check('send_lead_event')}> <span>Avisar as plataformas também quando chega uma conversa nova (evento de Lead)</span></label>
+      <label class="check"><input type="checkbox" name="invisible_ref" value="1" ${check('invisible_ref')}> <span>Esconder o código de rastreio na mensagem<br><span class="help">Mais discreto, porém o código pode se perder se o lead reescrever a mensagem. Sem esta opção, aparece um código curto como "(cód. VZ-AB12CD)".</span></span></label>
+    </details>`)}
 
-  <fieldset><legend>Google Analytics 4 (Measurement Protocol)</legend><div class="cols">
-    <div><label>Measurement ID</label><input name="ga4_measurement_id" placeholder="G-XXXXXXX" value="${v('ga4_measurement_id')}"></div>
-    <div><label>API secret</label><input name="ga4_api_secret" type="password" autocomplete="off" placeholder="${secret('ga4_api_secret')}"></div>
-  </div></fieldset>
+  ${section('Meta (Facebook e Instagram)', 'Para enviar leads e vendas ao Pixel / Conversions API e otimizar campanhas.', html`
+    <div class="form-cols">
+      <div><label for="f-px">ID do Pixel (conjunto de dados)</label><input id="f-px" name="meta_pixel_id" value="${v('meta_pixel_id')}" placeholder="Ex.: 123456789012345"></div>
+      <div><label for="f-tk">Token da API de Conversões</label><input id="f-tk" name="meta_access_token" type="password" autocomplete="off" placeholder="${saved('meta_access_token')}">
+        <p class="help">Gerado no Gerenciador de Eventos, em Configurações do pixel.</p></div>
+    </div>
+    <details class="more"><summary>Opções avançadas</summary>
+      <label for="f-tc">Código de evento de teste</label><input id="f-tc" name="meta_test_event_code" value="${v('meta_test_event_code')}" placeholder="TEST12345">
+      <p class="help">Use durante a homologação para ver os eventos em "Testar eventos". Apague depois.</p>
+      <label for="f-waba">ID da conta do WhatsApp Business Platform (WABA)</label><input id="f-waba" name="meta_waba_id" value="${v('meta_waba_id')}">
+      <p class="help">Só preencha se o número estiver na API oficial da Meta e o pixel estiver vinculado a essa conta. Números conectados pelo WhatsApp Manager normalmente não têm WABA.</p>
+    </details>`)}
 
-  <fieldset><legend>Google Ads (conversões offline por GCLID)</legend><div class="cols">
-    <div><label>Customer ID</label><input name="gads_customer_id" placeholder="123-456-7890" value="${v('gads_customer_id')}"></div>
-    <div><label>ID da ação de conversão — Compra (API)</label><input name="gads_purchase_action_id" value="${v('gads_purchase_action_id')}"></div>
-    <div><label>ID da ação de conversão — Lead (API)</label><input name="gads_lead_action_id" value="${v('gads_lead_action_id')}"></div>
-    <div><label>Nome da ação — Compra (feed CSV)</label><input name="gads_purchase_action_name" value="${v('gads_purchase_action_name')}"></div>
-    <div><label>Nome da ação — Lead (feed CSV)</label><input name="gads_lead_action_name" value="${v('gads_lead_action_name')}"></div>
-  </div>
-  <div class="hint">${googleAdsApiEnabled() ? 'Credenciais da API do Google Ads configuradas no servidor: envio automático ativo.' : 'Sem credenciais da API do Google Ads no servidor: use o feed CSV com upload agendado (funciona sem developer token).'}</div>
-  </fieldset>
-  ${'id' in c && c.id ? html`<label><input type="checkbox" name="active" value="1" ${check('active')} style="width:auto"> Cliente ativo</label>` : ''}
-  <p><button>Salvar</button></p></form>`;
+  ${section('Google Analytics 4', 'Registra leads e vendas no GA4 do cliente.', html`
+    <div class="form-cols">
+      <div><label for="f-ga">ID da métrica</label><input id="f-ga" name="ga4_measurement_id" placeholder="G-XXXXXXXXXX" value="${v('ga4_measurement_id')}"></div>
+      <div><label for="f-gs">Chave secreta da API</label><input id="f-gs" name="ga4_api_secret" type="password" autocomplete="off" placeholder="${saved('ga4_api_secret')}">
+        <p class="help">GA4 › Administrador › Fluxos de dados › Chaves secretas da API do Measurement Protocol.</p></div>
+    </div>`)}
+
+  ${section('Google Ads', 'Envia vendas de quem clicou em anúncios do Google (precisa do link rastreável ou da tag no site).', html`
+    <div class="form-cols">
+      <div><label for="f-gc">ID do cliente Google Ads</label><input id="f-gc" name="gads_customer_id" placeholder="123-456-7890" value="${v('gads_customer_id')}"></div>
+      <div><label for="f-gpn">Nome da conversão de venda</label><input id="f-gpn" name="gads_purchase_action_name" value="${v('gads_purchase_action_name')}" placeholder="Venda WhatsApp">
+        <p class="help">Exatamente como foi criada no Google Ads (tipo "Importação").</p></div>
+    </div>
+    <details class="more"><summary>Opções avançadas</summary>
+      <label for="f-gln">Nome da conversão de lead (opcional)</label><input id="f-gln" name="gads_lead_action_name" value="${v('gads_lead_action_name')}">
+      <div class="form-cols">
+        <div><label for="f-gpi">ID da conversão de venda (envio pela API)</label><input id="f-gpi" name="gads_purchase_action_id" value="${v('gads_purchase_action_id')}"></div>
+        <div><label for="f-gli">ID da conversão de lead (envio pela API)</label><input id="f-gli" name="gads_lead_action_id" value="${v('gads_lead_action_id')}"></div>
+      </div>
+      <p class="help">${googleAdsApiEnabled() ? 'O servidor tem acesso à API do Google Ads: com os IDs preenchidos, o envio é automático.' : 'O servidor não tem credenciais da API do Google Ads. Use a importação agendada (link na aba Instalação), que só precisa do nome da conversão.'}</p>
+    </details>`)}
+
+  ${'id' in c && c.id ? section('Status', 'Clientes pausados deixam de registrar conversas e enviar conversões.', html`
+    <label class="check"><input type="checkbox" name="active" value="1" ${check('active')}> <span>Cliente ativo</span></label>`) : ''}
+  <div class="row" style="justify-content:flex-end;border-top:1px solid var(--line);padding-top:16px"><button>${submitLabel}</button></div>
+  </form>`;
 }
 
 function readClientForm(f: Form, existing?: Client): Record<string, unknown> {
@@ -117,58 +307,13 @@ function readClientForm(f: Form, existing?: Client): Record<string, unknown> {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Componentes
-// ---------------------------------------------------------------------------
-
-export function kpis(s: ReturnType<typeof clientStats>, currency: string, days = 30): Raw {
-  return html`<div class="grid">
-    <div class="card kpi"><div class="v">${s.leads}</div><div class="l">Leads (${days} dias)</div></div>
-    <div class="card kpi"><div class="v">${s.sales}</div><div class="l">Vendas</div></div>
-    <div class="card kpi"><div class="v">${brl(s.revenue, currency)}</div><div class="l">Receita rastreada</div></div>
-    <div class="card kpi"><div class="v">${(s.conversion * 100).toFixed(1)}%</div><div class="l">Conversão lead → cliente</div></div>
-  </div>`;
-}
-
-export function breakdownTables(s: ReturnType<typeof clientStats>, currency: string): Raw {
-  return html`<div class="cols">
-  <div class="card wrap"><h2 style="margin-top:0">Por origem</h2><table><tr><th>Origem</th><th class="num">Leads</th><th class="num">Vendas</th><th class="num">Receita</th></tr>
-    ${s.bySource.map((r) => html`<tr><td>${SOURCE_LABEL[r.source] ?? r.source}</td><td class="num">${r.leads}</td><td class="num">${r.sales}</td><td class="num">${brl(r.revenue, currency)}</td></tr>`)}
-    ${s.bySource.length ? '' : html`<tr><td colspan="4" class="muted">Sem dados ainda.</td></tr>`}</table></div>
-  <div class="card wrap"><h2 style="margin-top:0">Por campanha / anúncio</h2><table><tr><th>Campanha</th><th class="num">Leads</th><th class="num">Vendas</th><th class="num">Receita</th></tr>
-    ${s.byCampaign.map((r) => html`<tr><td>${r.campaign}</td><td class="num">${r.leads}</td><td class="num">${r.sales}</td><td class="num">${brl(r.revenue, currency)}</td></tr>`)}
-    ${s.byCampaign.length ? '' : html`<tr><td colspan="4" class="muted">Sem dados ainda.</td></tr>`}</table></div>
-  </div>`;
-}
-
-function contactsTable(contacts: (Contact & { utm_campaign?: string | null; sales_total?: number })[], client: Client): Raw {
-  return html`<div class="wrap"><table><tr><th>Contato</th><th>Origem</th><th>Campanha/anúncio</th><th>Status</th><th>1ª mensagem</th><th class="num">Vendas</th><th>Registrar venda</th></tr>
-  ${contacts.map(
-    (c) => html`<tr>
-      <td><b>${c.push_name || '—'}</b><br><span class="muted">+${c.phone}</span></td>
-      <td><span class="chip">${SOURCE_LABEL[c.source]}</span>${c.ctwa_clid ? html` <span class="chip" title="ctwa_clid recebido">clid</span>` : ''}</td>
-      <td>${c.utm_campaign || c.ad_title || c.ad_source_id || '—'}</td>
-      <td>${c.status === 'customer' ? html`<span class="ok">cliente</span>` : c.status === 'qualified' ? 'qualificado' : 'lead'}</td>
-      <td>${dt(c.first_message_at)}</td>
-      <td class="num">${c.sales_total ? brl(c.sales_total, client.currency) : '—'}</td>
-      <td><form class="inline" method="post" action="/admin/contacts/${c.id}/sale">
-        <input name="value" placeholder="${String(c.last_quoted_value ?? client.default_sale_value).replace('.', ',')}" size="8" inputmode="decimal">
-        <button>Venda</button></form></td></tr>`,
-  )}
-  ${contacts.length ? '' : html`<tr><td colspan="7" class="muted">Nenhum contato ainda.</td></tr>`}</table></div>`;
-}
-
-function eventsTable(events: (TrackEvent & { phone?: string })[]): Raw {
-  return html`<div class="wrap"><table><tr><th>Quando</th><th>Evento</th><th>Plataforma</th><th>Contato</th><th>Status</th><th>Detalhe</th><th></th></tr>
-  ${events.map(
-    (e) => html`<tr><td>${dt(e.created_at)}</td><td>${KIND_LABEL[e.kind]}</td><td>${PLATFORM_LABEL[e.platform]}</td>
-      <td>${e.phone ? `+${e.phone}` : '—'}</td>
-      <td class="${STATUS_CLASS[e.status]}">${STATUS_LABEL[e.status]}${e.attempts > 1 ? ` (${e.attempts}x)` : ''}</td>
-      <td style="max-width:360px">${e.detail || ''}${e.request ? html`<details><summary class="muted">payload</summary><pre>${e.request}</pre>${e.response ? html`<pre>${e.response}</pre>` : ''}</details>` : ''}</td>
-      <td>${e.status !== 'sent' ? html`<form method="post" action="/admin/events/${e.id}/retry"><button class="secondary">Reenviar</button></form>` : ''}</td></tr>`,
-  )}
-  ${events.length ? '' : html`<tr><td colspan="7" class="muted">Nenhum evento ainda.</td></tr>`}</table></div>`;
-}
+const NEW_CLIENT_DEFAULTS: Partial<Client> = {
+  send_lead_event: 1,
+  currency: 'BRL',
+  sale_keywords: 'pagamento confirmado|pedido confirmado|compra confirmada|venda confirmada',
+  sale_labels: 'Venda',
+  qualified_labels: 'Qualificado',
+};
 
 // ---------------------------------------------------------------------------
 // Rotas
@@ -182,28 +327,43 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     }
   });
 
+  const send = (reply: FastifyReply, page: string) => reply.type('text/html').send(page);
+
+  // ----- Lista de clientes -------------------------------------------------
   app.get('/admin', async (req, reply) => {
     const clients = db.prepare('SELECT * FROM clients ORDER BY active DESC, name').all() as Client[];
-    const rows = clients.map((c) => {
-      const s = clientStats(db, c.id);
-      const errors = s.events.find((e) => e.status === 'error')?.n ?? 0;
-      return html`<tr><td><a href="/admin/clients/${c.id}"><b>${c.name}</b></a>${c.active ? '' : html` <span class="chip">inativo</span>`}</td>
-        <td>${platformsFor(c).map((p) => html`<span class="chip">${PLATFORM_LABEL[p]}</span> `)}</td>
-        <td class="num">${s.leads}</td><td class="num">${s.sales}</td><td class="num">${brl(s.revenue, c.currency)}</td>
-        <td class="num ${errors ? 'err' : ''}">${errors}</td></tr>`;
-    });
-    reply.type('text/html').send(
-      layout('Clientes', html`<h1>Clientes</h1><div class="card wrap"><table>
-      <tr><th>Cliente</th><th>Destinos</th><th class="num">Leads 30d</th><th class="num">Vendas 30d</th><th class="num">Receita 30d</th><th class="num">Erros de envio</th></tr>
-      ${rows}${clients.length ? '' : html`<tr><td colspan="6" class="muted">Nenhum cliente. <a href="/admin/clients/new">Cadastre o primeiro</a>.</td></tr>`}
-      </table></div>`, { flash: flashOf(req) }),
-    );
+    const items = clients.map((c) => ({ c, s: clientStats(db, c.id), failed: failedEvents(db, c.id) }));
+    const total = items.reduce((a, { s }) => ({ leads: a.leads + s.leads, sales: a.sales + s.sales }), { leads: 0, sales: 0 });
+    const revenueByCurrency = new Map<string, number>();
+    for (const { c, s } of items) revenueByCurrency.set(c.currency, (revenueByCurrency.get(c.currency) ?? 0) + s.revenue);
+    const revenueText = [...revenueByCurrency].map(([cur, v]) => brl(v, cur)).join(' + ') || brl(0);
+
+    const body = html`
+    <div class="page-head"><div><h1>Clientes</h1><p class="sub">Resultados dos últimos 30 dias</p></div>
+      <a class="btn" href="/admin/clients/new">+ Novo cliente</a></div>
+    ${clients.length ? html`
+    <div class="grid g4" style="margin-bottom:22px">
+      <div class="card kpi"><div class="l">Clientes ativos</div><div class="v">${clients.filter((c) => c.active).length}</div></div>
+      <div class="card kpi"><div class="l">Conversas novas</div><div class="v">${total.leads}</div></div>
+      <div class="card kpi"><div class="l">Vendas rastreadas</div><div class="v">${total.sales}</div></div>
+      <div class="card kpi"><div class="l">Faturamento rastreado</div><div class="v" style="font-size:${revenueByCurrency.size > 1 ? '20px' : ''}">${revenueText}</div></div>
+    </div>
+    <div class="grid g3">${items.map(({ c, s, failed }) => html`
+      <a class="card client-card" href="/admin/clients/${c.id}">
+        <div class="top"><h3 style="margin:0">${c.name}</h3><span class="muted small">${formatPhone(c.whatsapp_number)}</span>${connection(c)}</div>
+        <div class="nums"><div><b>${s.leads}</b><span>conversas</span></div><div><b>${s.sales}</b><span>vendas</span></div><div><b>${brl(s.revenue, c.currency).replace(/,\d{2}$/, '')}</b><span>faturado</span></div></div>
+        <div class="foot">${platformsFor(c).length ? platformsFor(c).map((p) => html`<span class="chip">${PLATFORM_LABEL[p]}</span>`) : html`<span class="pill pill-warn">Nenhum destino configurado</span>`}
+          ${failed ? html`<span class="pill pill-err">${failed} envio${failed > 1 ? 's' : ''} com falha</span>` : ''}</div>
+      </a>`)}</div>`
+    : html`<div class="card empty"><b>Nenhum cliente ainda</b><p>Cadastre o primeiro cliente para começar a rastrear as vendas do WhatsApp.</p><a class="btn" href="/admin/clients/new">+ Cadastrar cliente</a></div>`}`;
+    send(reply, layout('Clientes', body, { flash: flashOf(req) }));
   });
 
+  // ----- Cadastro ----------------------------------------------------------
   app.get('/admin/clients/new', async (_req, reply) => {
-    reply.type('text/html').send(
-      layout('Novo cliente', html`<h1>Novo cliente</h1>${clientForm({ send_lead_event: 1, currency: 'BRL', sale_keywords: 'pagamento confirmado|pedido confirmado|compra confirmada|venda confirmada', sale_labels: 'Venda|Comprou|Pago', qualified_labels: 'Qualificado|Lead quente' }, '/admin/clients')}`),
-    );
+    send(reply, layout('Novo cliente', html`<a class="back" href="/admin">← Clientes</a>
+      <div class="page-head"><div><h1>Novo cliente</h1><p class="sub">Só os dados do cliente são obrigatórios. Plataformas podem ser configuradas depois.</p></div></div>
+      ${clientForm(NEW_CLIENT_DEFAULTS, '/admin/clients', 'Cadastrar e ir para a instalação')}`));
   });
 
   app.post('/admin/clients', async (req, reply) => {
@@ -213,19 +373,223 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const full = { ...data, slug, webhook_token: token(), report_token: token(), api_token: token() };
     const keys = Object.keys(full);
     try {
-      const info = db
-        .prepare(`INSERT INTO clients (${keys.join(',')}) VALUES (${keys.map((k) => '@' + k).join(',')})`)
-        .run(full);
-      return back(reply, `/admin/clients/${info.lastInsertRowid}`, 'Cliente criado. Configure o webhook da Evolution abaixo.');
+      const info = db.prepare(`INSERT INTO clients (${keys.join(',')}) VALUES (${keys.map((k) => '@' + k).join(',')})`).run(full);
+      return back(reply, `/admin/clients/${info.lastInsertRowid}/setup`, 'Cliente cadastrado! Agora siga os passos da instalação.');
     } catch (err) {
-      return back(reply, '/admin', `Erro ao salvar: ${(err as Error).message}`);
+      const msg = /UNIQUE.*evolution_instance/.test((err as Error).message)
+        ? 'Erro: já existe um cliente com essa instância do WhatsApp Manager.'
+        : `Erro ao salvar: ${(err as Error).message}`;
+      return back(reply, '/admin', msg);
     }
   });
 
+  // ----- Visão geral -------------------------------------------------------
+  app.get('/admin/clients/:id', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const s = clientStats(db, c.id);
+    const recent = db
+      .prepare(`${CONTACT_SELECT} WHERE c.client_id = ? AND c.messages_in > 0 ORDER BY c.last_message_at DESC LIMIT 6`)
+      .all(c.id) as ContactRow[];
+    const setupPending = !c.last_webhook_at || !platformsFor(c).length;
+    const body = html`
+      ${setupPending ? html`<div class="card" style="border-color:var(--warn);margin-bottom:16px"><div class="row"><div class="spacer"><h3>Instalação incompleta</h3>
+        <p class="muted small" style="margin:0">${!c.last_webhook_at ? 'Ainda não recebemos mensagens deste WhatsApp.' : 'Nenhuma plataforma (Meta, GA4 ou Google Ads) foi configurada.'}</p></div>
+        <a class="btn" href="/admin/clients/${c.id}/setup">Ver o que falta</a></div></div>` : ''}
+      ${kpiRow(s, c.currency)}
+      <div class="grid g2" style="margin-top:16px">${sourcesCard(s, c.currency)}${funnelCard(s)}</div>
+      <div style="margin-top:16px">${campaignsCard(s, c.currency)}</div>
+      <div class="card" style="margin-top:16px"><div class="card-head"><h2>Conversas recentes</h2><a href="/admin/clients/${c.id}/contacts">Ver todas →</a></div>
+        ${contactsTable(recent, c, `/admin/clients/${c.id}`)}</div>`;
+    send(reply, clientPage(db, c, 'overview', body, flashOf(req)));
+  });
+
+  // ----- Conversas ---------------------------------------------------------
+  app.get('/admin/clients/:id/contacts', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const qs = req.query as Form;
+    const q = (qs.q || '').trim();
+    const status = ['lead', 'qualified', 'customer'].includes(qs.status || '') ? qs.status! : '';
+    const source = Object.keys(SOURCE_LABEL).includes(qs.source || '') ? qs.source! : '';
+    const like = `%${q}%`;
+    const rows = db
+      .prepare(
+        `${CONTACT_SELECT} WHERE c.client_id = ? AND c.messages_in > 0
+         AND (? = '' OR c.phone LIKE ? OR c.push_name LIKE ?) AND (? = '' OR c.status = ?) AND (? = '' OR c.source = ?)
+         ORDER BY c.last_message_at DESC LIMIT 300`,
+      )
+      .all(c.id, q, like, like, status, status, source, source) as ContactRow[];
+    const link = (st: string) => {
+      const p = new URLSearchParams({ ...(q ? { q } : {}), ...(st ? { status: st } : {}), ...(source ? { source } : {}) });
+      return `/admin/clients/${c.id}/contacts${p.size ? `?${p}` : ''}`;
+    };
+    const backUrl = req.url;
+    const body = html`<div class="card">
+      <form class="filters" method="get">
+        <div class="seg">${[['', 'Todas'], ['lead', 'Leads'], ['qualified', 'Qualificados'], ['customer', 'Clientes']].map(([k, l]) => html`<a class="${status === k ? 'on' : ''}" href="${link(k)}">${l}</a>`)}</div>
+        ${status ? html`<input type="hidden" name="status" value="${status}">` : ''}
+        <select name="source" onchange="this.form.submit()" aria-label="Origem"><option value="">Todas as origens</option>
+          ${Object.entries(SOURCE_LABEL).map(([k, l]) => html`<option value="${k}" ${source === k ? raw('selected') : ''}>${l}</option>`)}</select>
+        <input name="q" value="${q}" placeholder="Buscar nome ou telefone" aria-label="Buscar">
+      </form>
+      ${contactsTable(rows, c, backUrl)}</div>`;
+    send(reply, clientPage(db, c, 'contacts', body, flashOf(req)));
+  });
+
+  // ----- Vendas ------------------------------------------------------------
+  app.get('/admin/clients/:id/sales', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const rows = db
+      .prepare(
+        `SELECT s.*, ct.push_name, ct.phone, ct.source FROM sales s JOIN contacts ct ON ct.id = s.contact_id
+         WHERE s.client_id = ? ORDER BY s.created_at DESC LIMIT 300`,
+      )
+      .all(c.id) as (Sale & { push_name: string | null; phone: string; source: string })[];
+    const total = rows.reduce((a, r) => a + r.value, 0);
+    const body = html`<div class="card">
+      <div class="card-head"><div><h2>Vendas registradas</h2><p class="muted small" style="margin:0">${rows.length} venda${rows.length === 1 ? '' : 's'} · ${brl(total, c.currency)}</p></div></div>
+      ${rows.length ? html`<div class="table-wrap"><table>
+        <tr><th>Data</th><th>Cliente</th><th>Origem</th><th>Como foi identificada</th><th class="num">Valor</th><th></th></tr>
+        ${rows.map((r) => html`<tr>
+          <td class="muted">${dt(r.created_at)}</td>
+          <td><div class="person"><span class="avatar">${initials(r.push_name)}</span><div><b>${r.push_name || 'Sem nome'}</b><span>${formatPhone(r.phone)}</span></div></div></td>
+          <td>${sourceChip(r.source)}</td>
+          <td class="muted">${DETECTED_LABEL[r.detected_by]}${r.note ? html`<div class="small">${r.note}</div>` : ''}</td>
+          <td class="num"><b>${brl(r.value, r.currency)}</b></td>
+          <td class="num"><form method="post" action="/admin/sales/${r.id}/delete" onsubmit="return confirm('Excluir esta venda? Conversões que já foram enviadas para Meta e Google não são desfeitas.')"><button class="danger sm">Excluir</button></form></td>
+        </tr>`)}</table></div>`
+      : html`<div class="empty"><b>Nenhuma venda ainda</b>As vendas são identificadas pelas frases de confirmação, pela etiqueta do WhatsApp ou marcadas manualmente em Conversas.</div>`}
+    </div>`;
+    send(reply, clientPage(db, c, 'sales', body, flashOf(req)));
+  });
+
+  // ----- Envios (eventos) --------------------------------------------------
+  app.get('/admin/clients/:id/events', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const status = ['error', 'pending', 'sent'].includes((req.query as Form).status || '') ? (req.query as Form).status! : '';
+    const groups = loadEventGroups(db, c.id, status, 200);
+    const s = clientStats(db, c.id);
+    const body = html`
+      <div class="grid g3" style="margin-bottom:16px">
+        <div class="card kpi"><div class="l">Enviados com sucesso</div><div class="v" style="color:var(--brand-strong)">${s.eventsSent}</div><div class="h">últimos 30 dias</div></div>
+        <div class="card kpi"><div class="l">Com falha</div><div class="v" style="color:${s.eventsFailed ? 'var(--err)' : 'inherit'}">${s.eventsFailed}</div><div class="h">verifique as credenciais em Configurações</div></div>
+        <div class="card kpi"><div class="l">Na fila</div><div class="v">${s.eventsPending}</div><div class="h">serão enviados em instantes</div></div>
+      </div>
+      <div class="card">
+        <div class="filters"><div class="seg">${[['', 'Todos'], ['error', 'Com falha'], ['pending', 'Na fila'], ['sent', 'Enviados']].map(([k, l]) => html`<a class="${status === k ? 'on' : ''}" href="/admin/clients/${c.id}/events${k ? `?status=${k}` : ''}">${l}</a>`)}</div></div>
+        <p class="help" style="margin:0 0 10px">✓ enviado · ✕ falhou · … na fila · – não se aplica (ex.: lead que não veio de anúncio do Google). Passe o mouse sobre cada item para ver o motivo.</p>
+        ${eventsTable(groups, c.id)}</div>`;
+    send(reply, clientPage(db, c, 'events', body, flashOf(req)));
+  });
+
+  // ----- Links -------------------------------------------------------------
+  app.get('/admin/clients/:id/links', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const links = db
+      .prepare(
+        `SELECT l.*, (SELECT COUNT(*) FROM clicks k WHERE k.link_id = l.id) clicks,
+                (SELECT COUNT(*) FROM clicks k WHERE k.link_id = l.id AND k.matched_contact_id IS NOT NULL) leads
+         FROM tracking_links l WHERE l.client_id = ? ORDER BY l.id DESC`,
+      )
+      .all(c.id) as (TrackingLink & { clicks: number; leads: number })[];
+    const body = html`<div class="grid g2">
+      <div class="stack">
+        ${links.length ? links.map((l) => html`<div class="card">
+          <div class="card-head"><div><h3>${l.name}</h3><span class="muted small">${l.clicks} clique${l.clicks === 1 ? '' : 's'} · ${l.leads} conversa${l.leads === 1 ? '' : 's'}</span></div>
+            <form method="post" action="/admin/links/${l.id}/delete" onsubmit="return confirm('Excluir este link? Quem clicar nele verá uma página de erro.')"><button class="danger sm">Excluir</button></form></div>
+          ${copyable(`${config.baseUrl}/r/${l.slug}`)}
+          <p class="muted small" style="margin:0">Mensagem: "${l.message}"${l.utm_campaign ? html` · campanha <b>${l.utm_campaign}</b>` : ''}</p>
+        </div>`)
+        : html`<div class="card empty"><b>Nenhum link criado</b>Crie links para bio do Instagram, Google, QR codes e anúncios que levam ao site.</div>`}
+      </div>
+      <form class="card" method="post" action="/admin/clients/${c.id}/links" style="align-self:start">
+        <h2>Criar link rastreável</h2>
+        <p class="muted small">Quem clicar abre o WhatsApp do cliente com a mensagem pronta. O Vendeuzap identifica a origem automaticamente.</p>
+        <label for="l-name">Onde o link será usado</label><input id="l-name" name="name" required placeholder="Ex.: Bio do Instagram">
+        <label for="l-msg">Mensagem que o lead vai enviar</label><input id="l-msg" name="message" value="Olá! Gostaria de mais informações.">
+        <details class="more"><summary>Parâmetros UTM (opcional)</summary>
+          <div class="form-cols"><div><label for="l-src">utm_source</label><input id="l-src" name="utm_source" placeholder="instagram"></div>
+          <div><label for="l-med">utm_medium</label><input id="l-med" name="utm_medium" placeholder="bio"></div></div>
+          <label for="l-camp">utm_campaign</label><input id="l-camp" name="utm_campaign" placeholder="black-friday">
+        </details>
+        <div class="row" style="margin-top:16px"><button>Criar link</button></div>
+      </form></div>`;
+    send(reply, clientPage(db, c, 'links', body, flashOf(req)));
+  });
+
+  // ----- Instalação --------------------------------------------------------
+  app.get('/admin/clients/:id/setup', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const labels = db.prepare('SELECT name FROM labels WHERE client_id = ? ORDER BY name').all(c.id) as { name: string }[];
+    const tagClick = db.prepare(`SELECT MAX(created_at) t FROM clicks WHERE client_id = ? AND origin = 'tag'`).get(c.id) as { t: number | null };
+    const linkCount = (db.prepare('SELECT COUNT(*) n FROM tracking_links WHERE client_id = ?').get(c.id) as { n: number }).n;
+    const platforms = platformsFor(c);
+    const webhookUrl = `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`;
+    const tag = `<script src="${config.baseUrl}/t.js?c=${c.slug}${c.invisible_ref ? '&inv=1' : ''}" async></script>`;
+    const evolutionReady = Boolean(config.evolution.url && config.evolution.apiKey);
+
+    const step = (n: number, done: boolean, title: string, status: Raw, content: Raw, optional = false) =>
+      html`<li class="step ${done ? 'done' : ''}"><span class="n">${done ? '✓' : n}</span><div>
+        <div class="step-head"><h3 style="margin:0">${title}</h3>${optional ? html`<span class="chip">opcional</span>` : ''}${status}</div>${content}</div></li>`;
+
+    const body = html`<div class="card"><ol class="steps">
+      ${step(1, Boolean(c.last_webhook_at), 'Conectar o WhatsApp',
+        c.last_webhook_at ? html`<span class="pill pill-ok">Recebendo mensagens · última ${ago(c.last_webhook_at)}</span>` : html`<span class="pill pill-warn">Aguardando a primeira mensagem</span>`,
+        html`<p class="muted">Liga a instância <b>${c.evolution_instance}</b> do WhatsApp Manager ao Vendeuzap. Depois de conectar, mande uma mensagem de teste para o número do cliente.</p>
+        ${evolutionReady ? html`<form method="post" action="/admin/clients/${c.id}/evolution-webhook"><button class="${c.last_webhook_at ? 'ghost' : ''}">${c.last_webhook_at ? 'Reconectar' : 'Conectar automaticamente'}</button></form>`
+          : html`<p class="help">A conexão automática precisa de EVOLUTION_URL e EVOLUTION_API_KEY no servidor. Enquanto isso, use a configuração manual abaixo.</p>`}
+        <details class="more"><summary>Configuração manual</summary>
+          <p class="small muted" style="margin-top:8px">Na Evolution, em Webhook da instância, cole a URL abaixo e ative os eventos MESSAGES_UPSERT, SEND_MESSAGE, LABELS_EDIT e LABELS_ASSOCIATION.</p>
+          ${copyable(webhookUrl)}</details>`)}
+
+      ${step(2, platforms.length > 0, 'Escolher para onde enviar as conversões',
+        platforms.length ? html`<span class="pill pill-ok">${platforms.map((p) => PLATFORM_LABEL[p]).join(', ')}</span>` : html`<span class="pill pill-warn">Nenhuma plataforma</span>`,
+        html`<p class="muted">Informe o Pixel da Meta, o GA4 e/ou o Google Ads do cliente.</p>
+        <a class="btn ghost" href="/admin/clients/${c.id}/edit">Abrir configurações</a>`)}
+
+      ${step(3, labels.length > 0, 'Usar etiquetas do WhatsApp Business',
+        labels.length ? html`<span class="pill pill-ok">${labels.length} etiqueta${labels.length > 1 ? 's' : ''}</span>` : html``,
+        html`<p class="muted">Se a equipe marca conversas com etiquetas, a etiqueta <b>${c.sale_labels || 'Venda'}</b> registra a venda e <b>${c.qualified_labels || 'Qualificado'}</b> marca o lead como qualificado.</p>
+        ${labels.length ? html`<p class="small muted">Etiquetas encontradas: ${labels.map((l) => l.name).join(', ')}</p>` : ''}
+        ${evolutionReady ? html`<form method="post" action="/admin/clients/${c.id}/sync-labels"><button class="ghost">Buscar etiquetas</button></form>` : html`<p class="help">As etiquetas também são aprendidas sozinhas quando alguém cria ou edita uma etiqueta no app.</p>`}`, true)}
+
+      ${step(4, Boolean(tagClick.t), 'Instalar o código no site',
+        tagClick.t ? html`<span class="pill pill-ok">Último clique ${ago(tagClick.t)}</span>` : html``,
+        html`<p class="muted">Faz os botões de WhatsApp do site informarem de qual anúncio ou campanha o visitante veio. Cole antes de &lt;/body&gt; ou no Google Tag Manager (tag "HTML personalizado").</p>
+        ${copyable(tag)}`, true)}
+
+      ${step(5, linkCount > 0, 'Criar links rastreáveis',
+        linkCount ? html`<span class="pill pill-ok">${linkCount} link${linkCount > 1 ? 's' : ''}</span>` : html``,
+        html`<p class="muted">Para bio do Instagram, QR codes e anúncios do Google sem site.</p>
+        <a class="btn ghost" href="/admin/clients/${c.id}/links">Criar link</a>`, true)}
+
+      ${step(6, false, 'Compartilhar o relatório com o cliente', html``,
+        html`<p class="muted">Página só de leitura, sem login, com conversas, vendas e faturamento por origem.</p>${copyable(`${config.baseUrl}/report/${c.report_token}`)}`)}
+    </ol></div>
+
+    <details class="card more" style="margin-top:16px"><summary>Integrações avançadas (API e Google Ads)</summary>
+      <h3 style="margin-top:14px">Registrar vendas por API (n8n, CRM, checkout)</h3>
+      <pre>curl -X POST ${config.baseUrl}/api/v1/sales \\
+  -H "Authorization: Bearer ${c.api_token}" -H "Content-Type: application/json" \\
+  -d '{"phone":"5511999999999","value":199.90,"external_ref":"pedido-123"}'</pre>
+      <h3 style="margin-top:14px">Importação agendada no Google Ads</h3>
+      ${c.gads_purchase_action_name || c.gads_lead_action_name
+        ? html`<p class="muted small">No Google Ads: Metas › Conversões › Uploads › Programações › nova programação por HTTPS, com esta URL:</p>${copyable(`${config.baseUrl}/feeds/google-ads/${c.api_token}.csv`)}`
+        : html`<p class="muted small">Preencha o nome da conversão de venda do Google Ads em Configurações para liberar a URL de importação.</p>`}
+    </details>`;
+    send(reply, clientPage(db, c, 'setup', body, flashOf(req)));
+  });
+
+  // ----- Configurações -----------------------------------------------------
   app.get('/admin/clients/:id/edit', async (req, reply) => {
     const c = getClient(db, (req.params as Form).id);
     if (!c) return notFound(reply);
-    reply.type('text/html').send(layout(`Editar ${c.name}`, html`<h1>Editar ${c.name}</h1>${clientForm(c, `/admin/clients/${c.id}`)}`));
+    send(reply, clientPage(db, c, 'edit', clientForm(c, `/admin/clients/${c.id}`, 'Salvar alterações'), flashOf(req)));
   });
 
   app.post('/admin/clients/:id', async (req, reply) => {
@@ -235,132 +599,49 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const sets = Object.keys(data).map((k) => `${k} = @${k}`).join(', ');
     try {
       db.prepare(`UPDATE clients SET ${sets} WHERE id = @id`).run({ ...data, id: c.id });
-      return back(reply, `/admin/clients/${c.id}`, 'Configurações salvas.');
+      return back(reply, `/admin/clients/${c.id}/edit`, 'Configurações salvas.');
     } catch (err) {
-      return back(reply, `/admin/clients/${c.id}/edit`, `Erro: ${(err as Error).message}`);
+      return back(reply, `/admin/clients/${c.id}/edit`, `Erro ao salvar: ${(err as Error).message}`);
     }
   });
 
-  app.get('/admin/clients/:id', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
-    if (!c) return notFound(reply);
-    const s = clientStats(db, c.id);
-    const links = db.prepare('SELECT * FROM tracking_links WHERE client_id = ? ORDER BY id DESC').all(c.id) as TrackingLink[];
-    const contacts = db
-      .prepare(
-        `SELECT c.*, k.utm_campaign, (SELECT SUM(value) FROM sales s WHERE s.contact_id = c.id) sales_total
-         FROM contacts c LEFT JOIN clicks k ON k.id = c.click_id
-         WHERE c.client_id = ? AND c.messages_in > 0 ORDER BY c.last_message_at DESC LIMIT 25`,
-      )
-      .all(c.id) as (Contact & { utm_campaign: string | null; sales_total: number })[];
-    const events = db
-      .prepare(`SELECT e.*, c.phone FROM events e LEFT JOIN contacts c ON c.id = e.contact_id WHERE e.client_id = ? ORDER BY e.id DESC LIMIT 15`)
-      .all(c.id) as (TrackEvent & { phone: string })[];
-    const labels = db.prepare('SELECT name FROM labels WHERE client_id = ? ORDER BY name').all(c.id) as { name: string }[];
-    const webhookUrl = `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`;
-    const tag = `<script src="${config.baseUrl}/t.js?c=${c.slug}${c.invisible_ref ? '&inv=1' : ''}" async></script>`;
-
-    reply.type('text/html').send(
-      layout(c.name, html`
-      <h1>${c.name} <a class="btn secondary" href="/admin/clients/${c.id}/edit" style="font-size:13px;vertical-align:middle">Configurações</a></h1>
-      ${kpis(s, c.currency)}
-      ${breakdownTables(s, c.currency)}
-
-      <h2>Conversas recentes</h2>
-      <div class="card"><form class="inline" method="get" action="/admin/clients/${c.id}/contacts" style="margin-bottom:10px">
-        <input name="q" placeholder="Buscar por nome ou telefone"><button class="secondary">Buscar</button>
-        <a href="/admin/clients/${c.id}/contacts">ver todas</a></form>
-        ${contactsTable(contacts, c)}</div>
-
-      <h2>Eventos enviados</h2>
-      <div class="card">${eventsTable(events)}<p><a href="/admin/clients/${c.id}/events">ver todos</a></p></div>
-
-      <h2>Links rastreáveis</h2>
-      <div class="card">
-        <p class="muted" style="margin-top:0">Use em bio, botões de anúncios para site, QR codes e campanhas do Google. Os parâmetros fbclid, gclid e UTMs da URL são capturados automaticamente.</p>
-        <div class="wrap"><table><tr><th>Nome</th><th>URL</th><th>Mensagem</th><th></th></tr>
-        ${links.map((l) => html`<tr><td>${l.name}</td><td><code>${config.baseUrl}/r/${l.slug}</code></td><td>${l.message}</td>
-          <td><form method="post" action="/admin/links/${l.id}/delete" onsubmit="return confirm('Excluir link?')"><button class="secondary">Excluir</button></form></td></tr>`)}
-        </table></div>
-        <form method="post" action="/admin/clients/${c.id}/links"><div class="cols">
-          <div><label>Nome</label><input name="name" required placeholder="Bio Instagram"></div>
-          <div><label>Mensagem inicial</label><input name="message" value="Olá! Gostaria de mais informações."></div>
-          <div><label>utm_source</label><input name="utm_source"></div><div><label>utm_medium</label><input name="utm_medium"></div>
-          <div><label>utm_campaign</label><input name="utm_campaign"></div>
-        </div><p><button>Criar link</button></p></form>
-      </div>
-
-      <h2>Instalação</h2>
-      <div class="card">
-        <p><b>1. Webhook da Evolution</b> (eventos: MESSAGES_UPSERT, SEND_MESSAGE, LABELS_EDIT, LABELS_ASSOCIATION)</p>
-        <pre>${webhookUrl}</pre>
-        <form class="inline" method="post" action="/admin/clients/${c.id}/evolution-webhook"><button>Configurar automaticamente na instância "${c.evolution_instance}"</button></form>
-        <form class="inline" method="post" action="/admin/clients/${c.id}/sync-labels"><button class="secondary">Sincronizar etiquetas</button></form>
-        <p class="muted">Etiquetas conhecidas: ${labels.length ? labels.map((l) => l.name).join(', ') : 'nenhuma (sincronize ou edite uma etiqueta no app)'}</p>
-        <p><b>2. Tag no site do cliente</b> (antes de &lt;/body&gt; ou via Google Tag Manager, como HTML personalizado)</p>
-        <pre>${tag}</pre>
-        <p><b>3. Registro de vendas via API</b> (n8n, CRM, checkout)</p>
-        <pre>curl -X POST ${config.baseUrl}/api/v1/sales \\
-  -H "Authorization: Bearer ${c.api_token}" -H "Content-Type: application/json" \\
-  -d '{"phone":"5511999999999","value":199.90,"external_ref":"pedido-123"}'</pre>
-        <p><b>4. Relatório para o cliente</b> (somente leitura)</p><pre>${config.baseUrl}/report/${c.report_token}</pre>
-        ${c.gads_purchase_action_name || c.gads_lead_action_name ? html`<p><b>5. Feed CSV do Google Ads</b> (upload agendado via HTTPS)</p><pre>${config.baseUrl}/feeds/google-ads/${c.api_token}.csv</pre>` : ''}
-      </div>`, { flash: flashOf(req) }),
-    );
-  });
-
-  app.get('/admin/clients/:id/contacts', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
-    if (!c) return notFound(reply);
-    const q = ((req.query as Form).q || '').trim();
-    const like = `%${q}%`;
-    const contacts = db
-      .prepare(
-        `SELECT c.*, k.utm_campaign, (SELECT SUM(value) FROM sales s WHERE s.contact_id = c.id) sales_total
-         FROM contacts c LEFT JOIN clicks k ON k.id = c.click_id
-         WHERE c.client_id = ? AND (? = '' OR c.phone LIKE ? OR c.push_name LIKE ?)
-         ORDER BY c.last_message_at DESC LIMIT 300`,
-      )
-      .all(c.id, q, like, like) as (Contact & { utm_campaign: string | null; sales_total: number })[];
-    reply.type('text/html').send(
-      layout(`Contatos · ${c.name}`, html`<h1><a href="/admin/clients/${c.id}">${c.name}</a> · Contatos</h1>
-      <div class="card"><form class="inline" method="get" style="margin-bottom:10px"><input name="q" value="${q}" placeholder="Nome ou telefone"><button class="secondary">Buscar</button></form>
-      ${contactsTable(contacts, c)}</div>`, { flash: flashOf(req) }),
-    );
-  });
-
-  app.get('/admin/clients/:id/events', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
-    if (!c) return notFound(reply);
-    const status = (req.query as Form).status || '';
-    const events = db
-      .prepare(
-        `SELECT e.*, c.phone FROM events e LEFT JOIN contacts c ON c.id = e.contact_id
-         WHERE e.client_id = ? AND (? = '' OR e.status = ?) ORDER BY e.id DESC LIMIT 300`,
-      )
-      .all(c.id, status, status) as (TrackEvent & { phone: string })[];
-    reply.type('text/html').send(
-      layout(`Eventos · ${c.name}`, html`<h1><a href="/admin/clients/${c.id}">${c.name}</a> · Eventos</h1>
-      <p>${['', 'sent', 'pending', 'error', 'skipped'].map((s) => html`<a class="chip" href="?status=${s}">${s ? STATUS_LABEL[s] : 'todos'}</a> `)}</p>
-      <div class="card">${eventsTable(events)}</div>`, { flash: flashOf(req) }),
-    );
-  });
-
+  // ----- Ações -------------------------------------------------------------
   app.post('/admin/contacts/:id/sale', async (req, reply) => {
     const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(Number((req.params as Form).id)) as Contact | undefined;
     if (!contact) return notFound(reply);
     const client = getClient(db, contact.client_id)!;
-    const typed = parseMoney((req.body as Form).value || '');
+    const f = req.body as Form;
+    const typed = parseMoney(f.value || '');
     const value = typed ?? contact.last_quoted_value ?? client.default_sale_value;
     registerSale(db, client, contact, { value, detectedBy: 'manual' });
-    return back(reply, `/admin/clients/${client.id}`, `Venda de ${brl(value, client.currency)} registrada para +${contact.phone}.`);
+    return back(reply, safeBack(f.back, `/admin/clients/${client.id}`), `Venda de ${brl(value, client.currency)} registrada para ${contact.push_name || formatPhone(contact.phone)}.`);
+  });
+
+  app.post('/admin/sales/:id/delete', async (req, reply) => {
+    const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(Number((req.params as Form).id)) as Sale | undefined;
+    if (!sale) return notFound(reply);
+    db.transaction(() => {
+      // Envios que ainda não saíram são cancelados junto com a venda
+      db.prepare(`DELETE FROM events WHERE sale_id = ? AND status IN ('pending','error')`).run(sale.id);
+      db.prepare('UPDATE events SET sale_id = NULL WHERE sale_id = ?').run(sale.id);
+      db.prepare('DELETE FROM sales WHERE id = ?').run(sale.id);
+      const left = db.prepare('SELECT 1 FROM sales WHERE contact_id = ?').get(sale.contact_id);
+      if (!left) db.prepare(`UPDATE contacts SET status = 'lead' WHERE id = ? AND status = 'customer'`).run(sale.contact_id);
+    })();
+    return back(reply, `/admin/clients/${sale.client_id}/sales`, 'Venda excluída.');
   });
 
   app.post('/admin/events/:id/retry', async (req, reply) => {
     const ev = db.prepare('SELECT * FROM events WHERE id = ?').get(Number((req.params as Form).id)) as TrackEvent | undefined;
     if (!ev) return notFound(reply);
-    const r = await processEvent(db, ev);
-    return back(reply, `/admin/clients/${ev.client_id}/events`, `Reenvio: ${STATUS_LABEL[r.status]}${r.detail ? ` — ${r.detail}` : ''}`);
+    const failed = db
+      .prepare(`SELECT * FROM events WHERE client_id = ? AND event_id = ? AND status = 'error'`)
+      .all(ev.client_id, ev.event_id) as TrackEvent[];
+    const results = [];
+    for (const e of failed) results.push(await processEvent(db, e));
+    const ok = results.every((r) => r.status === 'sent' || r.status === 'skipped');
+    const target = safeBack((req.body as Form)?.back, `/admin/clients/${ev.client_id}/events`);
+    return back(reply, target, ok ? 'Reenviado com sucesso.' : `Falha ao reenviar: ${results.find((r) => r.status === 'error')?.detail ?? 'erro desconhecido'}`);
   });
 
   app.post('/admin/clients/:id/links', async (req, reply) => {
@@ -373,14 +654,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     db.prepare(
       `INSERT INTO tracking_links (client_id, slug, name, message, utm_source, utm_medium, utm_campaign) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(c.id, slug, t('name') || 'Link', t('message') || 'Olá!', t('utm_source'), t('utm_medium'), t('utm_campaign'));
-    return back(reply, `/admin/clients/${c.id}`, 'Link criado.');
+    return back(reply, `/admin/clients/${c.id}/links`, 'Link criado. Copie e use onde quiser.');
   });
 
   app.post('/admin/links/:id/delete', async (req, reply) => {
     const l = db.prepare('SELECT * FROM tracking_links WHERE id = ?').get(Number((req.params as Form).id)) as TrackingLink | undefined;
     if (!l) return notFound(reply);
     db.prepare('DELETE FROM tracking_links WHERE id = ?').run(l.id);
-    return back(reply, `/admin/clients/${l.client_id}`, 'Link excluído.');
+    return back(reply, `/admin/clients/${l.client_id}/links`, 'Link excluído.');
   });
 
   app.post('/admin/clients/:id/evolution-webhook', async (req, reply) => {
@@ -388,9 +669,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     if (!c) return notFound(reply);
     try {
       await setInstanceWebhook(c.evolution_instance, `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`);
-      return back(reply, `/admin/clients/${c.id}`, 'Webhook configurado na Evolution API.');
+      return back(reply, `/admin/clients/${c.id}/setup`, 'WhatsApp conectado. Envie uma mensagem de teste para confirmar.');
     } catch (err) {
-      return back(reply, `/admin/clients/${c.id}`, `Falha ao configurar webhook: ${(err as Error).message}`);
+      return back(reply, `/admin/clients/${c.id}/setup`, `Falha ao conectar: ${(err as Error).message}`);
     }
   });
 
@@ -403,9 +684,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
         `INSERT INTO labels (client_id, label_id, name) VALUES (?, ?, ?) ON CONFLICT(client_id, label_id) DO UPDATE SET name = excluded.name`,
       );
       db.transaction(() => labels.forEach((l) => l.id && up.run(c.id, l.id, l.name)))();
-      return back(reply, `/admin/clients/${c.id}`, `${labels.length} etiqueta(s) sincronizada(s).`);
+      return back(reply, `/admin/clients/${c.id}/setup`, `${labels.length} etiqueta(s) encontrada(s).`);
     } catch (err) {
-      return back(reply, `/admin/clients/${c.id}`, `Falha ao buscar etiquetas: ${(err as Error).message}`);
+      return back(reply, `/admin/clients/${c.id}/setup`, `Falha ao buscar etiquetas: ${(err as Error).message}`);
     }
   });
 }
+
+export { eventsTable, loadEventGroups };

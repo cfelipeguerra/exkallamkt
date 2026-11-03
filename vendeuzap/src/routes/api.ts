@@ -36,6 +36,7 @@ export function registerApiRoutes(app: FastifyInstance, db: DB): void {
     const client = db.prepare('SELECT * FROM clients WHERE webhook_token = ?').get(token) as Client | undefined;
     if (!client) return reply.code(404).send({ ok: false });
     if (!client.active) return { ok: true, skipped: 'cliente inativo' };
+    db.prepare('UPDATE clients SET last_webhook_at = unixepoch() WHERE id = ?').run(client.id);
 
     const body = req.body as { instance?: string };
     if (body?.instance && body.instance !== client.evolution_instance) {

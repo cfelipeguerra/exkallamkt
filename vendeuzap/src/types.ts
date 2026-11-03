@@ -26,6 +26,7 @@ export interface Client {
   gads_purchase_action_name: string | null;
   gads_lead_action_name: string | null;
   active: number;
+  last_webhook_at: number | null;
   created_at: number;
 }
 

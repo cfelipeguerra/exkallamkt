@@ -128,6 +128,11 @@ const MIGRATIONS: string[] = [
   CREATE UNIQUE INDEX events_unique ON events(platform, event_id);
   CREATE INDEX events_pending ON events(status, next_attempt_at);
   `,
+  `
+  ALTER TABLE clients ADD COLUMN last_webhook_at INTEGER;
+  CREATE INDEX events_client_event ON events(client_id, event_id);
+  CREATE INDEX contacts_client_last ON contacts(client_id, last_message_at);
+  `,
 ];
 
 export function openDb(path = config.dbPath): DB {

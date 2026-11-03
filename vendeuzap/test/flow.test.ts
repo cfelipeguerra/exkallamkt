@@ -168,9 +168,14 @@ test('painel exige autenticação e renderiza', async () => {
   const home = await app.inject({ method: 'GET', url: '/admin', headers: auth });
   assert.equal(home.statusCode, 200);
   assert.match(home.body, /Loja Teste/);
-  const page = await app.inject({ method: 'GET', url: '/admin/clients/1', headers: auth });
-  assert.equal(page.statusCode, 200);
-  assert.match(page.body, /webhooks\/evolution\/wh-token/);
+  for (const tab of ['', '/contacts', '/contacts?status=customer&source=link', '/sales', '/events', '/events?status=error', '/links', '/edit']) {
+    const r = await app.inject({ method: 'GET', url: `/admin/clients/1${tab}`, headers: auth });
+    assert.equal(r.statusCode, 200, `aba ${tab}`);
+  }
+  const setup = await app.inject({ method: 'GET', url: '/admin/clients/1/setup', headers: auth });
+  assert.equal(setup.statusCode, 200);
+  assert.match(setup.body, /webhooks\/evolution\/wh-token/);
+  assert.match(setup.body, /Recebendo mensagens/, 'webhook já recebido nos testes anteriores');
   const create = await app.inject({
     method: 'POST', url: '/admin/clients', headers: { ...auth, 'content-type': 'application/x-www-form-urlencoded' },
     payload: 'name=Cl%C3%ADnica+Sorriso&whatsapp_number=(11)+98888-7777&evolution_instance=clinica&send_lead_event=1',
@@ -183,4 +188,18 @@ test('painel exige autenticação e renderiza', async () => {
     method: 'POST', url: '/admin/contacts/1/sale', headers: { ...auth, 'content-type': 'application/x-www-form-urlencoded' }, payload: 'value=49%2C90',
   });
   assert.equal(sale.statusCode, 303);
+
+  // Excluir venda volta o contato para lead quando não sobra nenhuma venda
+  const before = db.prepare('SELECT COUNT(*) n FROM sales').get() as { n: number };
+  const last = db.prepare('SELECT * FROM sales ORDER BY id DESC LIMIT 1').get() as Sale;
+  const del = await app.inject({ method: 'POST', url: `/admin/sales/${last.id}/delete`, headers: auth });
+  assert.equal(del.statusCode, 303);
+  assert.equal((db.prepare('SELECT COUNT(*) n FROM sales').get() as { n: number }).n, before.n - 1);
+
+  // Redirecionamento de volta só para páginas do painel
+  const evil = await app.inject({
+    method: 'POST', url: '/admin/contacts/1/sale', headers: { ...auth, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: 'value=10&back=https%3A%2F%2Fevil.example',
+  });
+  assert.match(String(evil.headers.location), /^\/admin\/clients\/1/);
 });
