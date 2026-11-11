@@ -181,23 +181,94 @@ export function parseEvolutionWebhook(body: any): EvolutionEvent[] {
 
 export const WEBHOOK_EVENTS = ['MESSAGES_UPSERT', 'SEND_MESSAGE', 'LABELS_EDIT', 'LABELS_ASSOCIATION'];
 
+export class EvolutionError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+export const evolutionConfigured = (): boolean => Boolean(config.evolution.url && config.evolution.apiKey);
+
 async function evo(path: string, init: RequestInit = {}): Promise<unknown> {
-  if (!config.evolution.url || !config.evolution.apiKey) {
-    throw new Error('EVOLUTION_URL e EVOLUTION_API_KEY não configurados');
+  if (!evolutionConfigured()) {
+    throw new EvolutionError(0, 'EVOLUTION_URL e EVOLUTION_API_KEY não configurados');
   }
   const res = await fetch(`${config.evolution.url}${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', apikey: config.evolution.apiKey, ...(init.headers || {}) },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(20000),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Evolution ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) throw new EvolutionError(res.status, `Evolution ${res.status}: ${text.slice(0, 300)}`);
   try {
     return JSON.parse(text);
   } catch {
     return text;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Instâncias (criar, conectar por QR Code / código, status, desconectar)
+// Rotas conferidas no código-fonte da Evolution API v2 (instance.router.ts).
+// ---------------------------------------------------------------------------
+
+export type InstanceState = 'open' | 'connecting' | 'close' | 'missing';
+
+export interface QrInfo {
+  state: InstanceState;
+  base64: string | null;
+  pairingCode: string | null;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export async function getInstanceState(instance: string): Promise<InstanceState> {
+  try {
+    const res = (await evo(`/instance/connectionState/${encodeURIComponent(instance)}`)) as any;
+    const state = res?.instance?.state ?? res?.state;
+    return state === 'open' || state === 'connecting' || state === 'close' ? state : 'missing';
+  } catch (err) {
+    if (err instanceof EvolutionError && err.status === 404) return 'missing';
+    throw err;
+  }
+}
+
+/** Cria a instância (WhatsApp via Baileys) e já pede o QR Code. */
+export async function createInstance(instance: string): Promise<QrInfo> {
+  const res = (await evo('/instance/create', {
+    method: 'POST',
+    body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', qrcode: true }),
+  })) as any;
+  return { state: 'connecting', base64: res?.qrcode?.base64 ?? null, pairingCode: res?.qrcode?.pairingCode ?? null };
+}
+
+/**
+ * Pede um QR Code novo. Com o número (somente dígitos, com DDI), a Evolution também
+ * devolve um código de pareamento para digitar no celular, sem precisar ler o QR.
+ */
+export async function connectInstance(instance: string, number?: string | null): Promise<QrInfo> {
+  const qs = number ? `?number=${encodeURIComponent(number)}` : '';
+  const res = (await evo(`/instance/connect/${encodeURIComponent(instance)}${qs}`)) as any;
+  const state = res?.instance?.state ?? res?.instance?.status;
+  if (state === 'open') return { state: 'open', base64: null, pairingCode: null };
+  return { state: 'connecting', base64: res?.base64 ?? res?.qrcode?.base64 ?? null, pairingCode: res?.pairingCode ?? null };
+}
+
+export async function logoutInstance(instance: string): Promise<void> {
+  await evo(`/instance/logout/${encodeURIComponent(instance)}`, { method: 'DELETE' });
+}
+
+/** Webhook atual da instância (para avisar antes de substituir o de outra ferramenta). */
+export async function findInstanceWebhook(instance: string): Promise<{ url: string | null; enabled: boolean } | null> {
+  try {
+    const res = (await evo(`/webhook/find/${encodeURIComponent(instance)}`)) as any;
+    if (!res || typeof res !== 'object') return null;
+    return { url: res.url || null, enabled: Boolean(res.enabled) };
+  } catch (err) {
+    if (err instanceof EvolutionError && err.status === 404) return null;
+    throw err;
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export function setInstanceWebhook(instance: string, url: string): Promise<unknown> {
   return evo(`/webhook/set/${encodeURIComponent(instance)}`, {

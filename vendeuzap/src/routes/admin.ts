@@ -4,7 +4,10 @@ import { config } from '../config.js';
 import type { DB } from '../db.js';
 import { now } from '../db.js';
 import { processEvent } from '../dispatcher.js';
-import { fetchLabels, setInstanceWebhook } from '../integrations/evolution.js';
+import {
+  connectInstance, createInstance, evolutionConfigured, fetchLabels, findInstanceWebhook, getInstanceState,
+  type InstanceState, logoutInstance, setInstanceWebhook,
+} from '../integrations/evolution.js';
 import { googleAdsApiEnabled } from '../integrations/platforms.js';
 import { encrypt, normalizePhone, parseMoney, slugify, token } from '../lib/util.js';
 import { clientStats, failedEvents } from '../stats.js';
@@ -202,6 +205,115 @@ function eventsTable(groups: EventGroup[], clientId: number, compact = false): R
 }
 
 // ---------------------------------------------------------------------------
+// Conexão do WhatsApp (instância na Evolution API)
+// ---------------------------------------------------------------------------
+
+interface WaStep {
+  state: InstanceState | 'unconfigured' | 'error';
+  linked: boolean;
+  pill: Raw;
+  content: Raw;
+}
+
+const QR_SCRIPT = `(function(){var box=document.querySelector('[data-qr]');if(!box)return;var url=box.getAttribute('data-qr');
+var img=box.querySelector('img'),wait=box.querySelector('.qr-wait'),pc=box.querySelector('.pair-code'),stopped=false;
+function show(d){if(d.state==='open'){stopped=true;location.href=location.pathname+'?msg='+encodeURIComponent('WhatsApp conectado! Envie uma mensagem de teste para o número do cliente.');return}
+if(d.error){wait.textContent='Não foi possível falar com o WhatsApp Manager: '+d.error;wait.hidden=false;return}
+if(d.base64){img.src=d.base64;img.hidden=false;wait.hidden=true}
+if(d.pairingCode&&pc){pc.textContent=d.pairingCode.replace(/(.{4})(.{4})/,'$1-$2');pc.hidden=false}}
+function poll(q){fetch(url+(q||''),{credentials:'same-origin'}).then(function(r){return r.json()}).then(show).catch(function(){})}
+poll();setInterval(function(){if(!stopped)poll()},5000);
+var f=box.querySelector('form.pair');if(f)f.addEventListener('submit',function(e){e.preventDefault();var n=f.querySelector('input').value.replace(/\\D/g,'');if(n.length<10)return;if(n.length<=11)n='55'+n;poll('?number='+n)});})();`;
+
+function qrPanel(c: Client, statusUrl: string): Raw {
+  return html`<div class="qr" data-qr="${statusUrl}">
+    <div class="qr-box"><img alt="QR Code para conectar o WhatsApp" hidden><span class="qr-wait muted small">Gerando QR Code…</span></div>
+    <div>
+      <ol class="qr-steps">
+        <li>No celular do cliente, abra o <b>WhatsApp</b>.</li>
+        <li>Toque em <b>⋮</b> (Android) ou <b>Configurações</b> (iPhone) › <b>Aparelhos conectados</b> › <b>Conectar um aparelho</b>.</li>
+        <li>Aponte a câmera para o código ao lado.</li>
+      </ol>
+      <p class="help">O código se renova sozinho. Quando a conexão for feita, esta página atualiza automaticamente.</p>
+      <details class="more"><summary>Conectar com um código no lugar do QR Code</summary>
+        <form class="row pair" style="margin-top:10px"><input name="number" inputmode="tel" value="${formatPhone(c.whatsapp_number)}" style="max-width:220px" aria-label="Número do WhatsApp"><button class="ghost sm">Gerar código</button></form>
+        <p class="pair-code" hidden></p>
+        <p class="help">No celular: Aparelhos conectados › Conectar um aparelho › <b>Conectar com número de telefone</b>, e digite o código.</p>
+      </details>
+    </div>
+  </div><script>${raw(QR_SCRIPT)}</script>`;
+}
+
+async function whatsappStep(c: Client, webhookUrl: string): Promise<WaStep> {
+  const base = `/admin/clients/${c.id}/whatsapp`;
+  const lastMsg = c.last_webhook_at
+    ? html`<span class="pill pill-ok">Recebendo mensagens · última ${ago(c.last_webhook_at)}</span>`
+    : html`<span class="pill pill-warn">Aguardando a primeira mensagem</span>`;
+
+  if (!evolutionConfigured()) {
+    return {
+      state: 'unconfigured', linked: Boolean(c.last_webhook_at), pill: lastMsg,
+      content: html`<p class="muted">Para conectar o WhatsApp por aqui, o servidor precisa das variáveis EVOLUTION_URL e EVOLUTION_API_KEY. Enquanto isso, use a configuração manual abaixo.</p>`,
+    };
+  }
+
+  let state: InstanceState;
+  let hook: { url: string | null; enabled: boolean } | null = null;
+  try {
+    state = await getInstanceState(c.evolution_instance);
+    if (state !== 'missing') hook = await findInstanceWebhook(c.evolution_instance);
+  } catch (err) {
+    return {
+      state: 'error', linked: false,
+      pill: html`<span class="pill pill-err">WhatsApp Manager indisponível</span>`,
+      content: html`<p class="muted">Não foi possível consultar o WhatsApp Manager: ${(err as Error).message}</p>
+        <p class="help">Confira se a Evolution está no ar e se EVOLUTION_URL e EVOLUTION_API_KEY estão corretas no Coolify.</p>`,
+    };
+  }
+
+  const linked = Boolean(hook?.enabled && hook.url === webhookUrl);
+  const otherHook = hook?.enabled && hook.url && hook.url !== webhookUrl ? hook.url : null;
+
+  if (state === 'missing') {
+    return {
+      state, linked: false, pill: html`<span class="pill pill-warn">Não conectado</span>`,
+      content: html`<p class="muted">Vamos criar a instância <b>${c.evolution_instance}</b> no WhatsApp Manager e mostrar o QR Code para o cliente ler com o celular.</p>
+        <form method="post" action="${base}/create"><button>Criar e mostrar QR Code</button></form>
+        <p class="help">Se este número já está conectado no Manager com outro nome, corrija o nome da instância em Configurações em vez de criar outra.</p>`,
+    };
+  }
+
+  if (state !== 'open') {
+    return {
+      state, linked, pill: html`<span class="pill pill-warn">Aguardando leitura do QR Code</span>`,
+      content: html`${qrPanel(c, `${base}/status`)}
+        ${!linked ? html`<p class="help" style="margin-top:12px">Assim que conectar, clique em "Ligar ao Vendeuzap" se o passo não ficar verde sozinho.</p>` : ''}`,
+    };
+  }
+
+  const logout = html`<details class="more"><summary>Desconectar este WhatsApp</summary>
+    <form method="post" action="${base}/logout" style="margin-top:10px" onsubmit="return confirm('Desconectar o WhatsApp deste cliente? Para voltar, será preciso ler o QR Code de novo.')">
+      <button class="danger sm">Desconectar</button></form></details>`;
+
+  if (linked) {
+    return {
+      state, linked, pill: lastMsg,
+      content: html`<p class="muted">WhatsApp do cliente conectado e ligado ao Vendeuzap (instância <b>${c.evolution_instance}</b>).
+        ${c.last_webhook_at ? '' : ' Mande uma mensagem de teste de outro celular para confirmar.'}</p>${logout}`,
+    };
+  }
+
+  return {
+    state, linked, pill: html`<span class="pill pill-warn">Conectado, falta ligar ao Vendeuzap</span>`,
+    content: html`<p class="muted">O WhatsApp está conectado na instância <b>${c.evolution_instance}</b>, mas ainda não envia as mensagens para o Vendeuzap.</p>
+      ${otherHook ? html`<div class="notice">⚠️ Esta instância já envia mensagens para outra ferramenta:<br><code>${otherHook}</code><br>
+        A Evolution aceita um webhook por instância. Ligar ao Vendeuzap <b>desliga essa outra integração</b>.</div>` : ''}
+      <form method="post" action="/admin/clients/${c.id}/evolution-webhook" ${otherHook ? raw(`onsubmit="return confirm('A outra integração desta instância vai parar de receber mensagens. Continuar?')"`) : ''}>
+        <button>Ligar ao Vendeuzap</button></form>${logout}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Formulário de cliente
 // ---------------------------------------------------------------------------
 
@@ -217,8 +329,8 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
     <label for="f-name">Nome do cliente</label><input id="f-name" name="name" required value="${v('name')}" placeholder="Ex.: Ótica Visão Clara">
     <div class="form-cols">
       <div><label for="f-wa">WhatsApp</label><input id="f-wa" name="whatsapp_number" required placeholder="(11) 99999-9999" value="${c.whatsapp_number ? formatPhone(c.whatsapp_number) : ''}"></div>
-      <div><label for="f-inst">Nome da instância no WhatsApp Manager</label><input id="f-inst" name="evolution_instance" required value="${v('evolution_instance')}" placeholder="Ex.: otica-visao">
-        <p class="help">Exatamente como aparece na Evolution API.</p></div>
+      <div><label for="f-inst">Instância no WhatsApp Manager</label><input id="f-inst" name="evolution_instance" value="${v('evolution_instance')}" placeholder="${'id' in c && c.id ? '' : 'Deixe em branco para criar uma nova'}">
+        <p class="help">${'id' in c && c.id ? 'Exatamente como aparece no WhatsApp Manager.' : 'Número novo: deixe em branco e o Vendeuzap cria a instância e mostra o QR Code. Número já conectado no Manager: coloque o nome exato da instância.'}</p></div>
     </div>`)}
 
   ${section('Como identificar uma venda', 'O Vendeuzap marca a venda automaticamente quando uma destas coisas acontece na conversa.', html`
@@ -370,7 +482,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const data = readClientForm(req.body as Form);
     let slug = slugify(String(data.name)) || 'cliente';
     while (db.prepare('SELECT 1 FROM clients WHERE slug = ?').get(slug)) slug = `${slug}-${token(2).toLowerCase()}`;
-    const full = { ...data, slug, webhook_token: token(), report_token: token(), api_token: token() };
+    const full = {
+      ...data,
+      evolution_instance: data.evolution_instance || `vz-${slug}`,
+      slug, webhook_token: token(), report_token: token(), api_token: token(),
+    };
     const keys = Object.keys(full);
     try {
       const info = db.prepare(`INSERT INTO clients (${keys.join(',')}) VALUES (${keys.map((k) => '@' + k).join(',')})`).run(full);
@@ -531,19 +647,16 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const platforms = platformsFor(c);
     const webhookUrl = `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`;
     const tag = `<script src="${config.baseUrl}/t.js?c=${c.slug}${c.invisible_ref ? '&inv=1' : ''}" async></script>`;
-    const evolutionReady = Boolean(config.evolution.url && config.evolution.apiKey);
+    const evolutionReady = evolutionConfigured();
+    const wa = await whatsappStep(c, webhookUrl);
 
     const step = (n: number, done: boolean, title: string, status: Raw, content: Raw, optional = false) =>
       html`<li class="step ${done ? 'done' : ''}"><span class="n">${done ? '✓' : n}</span><div>
         <div class="step-head"><h3 style="margin:0">${title}</h3>${optional ? html`<span class="chip">opcional</span>` : ''}${status}</div>${content}</div></li>`;
 
     const body = html`<div class="card"><ol class="steps">
-      ${step(1, Boolean(c.last_webhook_at), 'Conectar o WhatsApp',
-        c.last_webhook_at ? html`<span class="pill pill-ok">Recebendo mensagens · última ${ago(c.last_webhook_at)}</span>` : html`<span class="pill pill-warn">Aguardando a primeira mensagem</span>`,
-        html`<p class="muted">Liga a instância <b>${c.evolution_instance}</b> do WhatsApp Manager ao Vendeuzap. Depois de conectar, mande uma mensagem de teste para o número do cliente.</p>
-        ${evolutionReady ? html`<form method="post" action="/admin/clients/${c.id}/evolution-webhook"><button class="${c.last_webhook_at ? 'ghost' : ''}">${c.last_webhook_at ? 'Reconectar' : 'Conectar automaticamente'}</button></form>`
-          : html`<p class="help">A conexão automática precisa de EVOLUTION_URL e EVOLUTION_API_KEY no servidor. Enquanto isso, use a configuração manual abaixo.</p>`}
-        <details class="more"><summary>Configuração manual</summary>
+      ${step(1, wa.state === 'open' && wa.linked && Boolean(c.last_webhook_at), 'Conectar o WhatsApp', wa.pill, html`${wa.content}
+        <details class="more"><summary>Configuração manual do webhook</summary>
           <p class="small muted" style="margin-top:8px">Na Evolution, em Webhook da instância, cole a URL abaixo e ative os eventos MESSAGES_UPSERT, SEND_MESSAGE, LABELS_EDIT e LABELS_ASSOCIATION.</p>
           ${copyable(webhookUrl)}</details>`)}
 
@@ -596,6 +709,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const c = getClient(db, (req.params as Form).id);
     if (!c) return notFound(reply);
     const data = readClientForm(req.body as Form, c);
+    if (!data.evolution_instance) data.evolution_instance = c.evolution_instance;
     const sets = Object.keys(data).map((k) => `${k} = @${k}`).join(', ');
     try {
       db.prepare(`UPDATE clients SET ${sets} WHERE id = @id`).run({ ...data, id: c.id });
@@ -664,12 +778,51 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     return back(reply, `/admin/clients/${l.client_id}/links`, 'Link excluído.');
   });
 
+  // ----- Conexão do WhatsApp pela Evolution --------------------------------
+  app.get('/admin/clients/:id/whatsapp/status', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return reply.code(404).send({ error: 'cliente não encontrado' });
+    reply.header('Cache-Control', 'no-store');
+    try {
+      const state = await getInstanceState(c.evolution_instance);
+      if (state === 'missing' || state === 'open') return { state };
+      return await connectInstance(c.evolution_instance, normalizePhone((req.query as Form).number || ''));
+    } catch (err) {
+      return { state: 'error', error: (err as Error).message.slice(0, 200) };
+    }
+  });
+
+  app.post('/admin/clients/:id/whatsapp/create', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    const setup = `/admin/clients/${c.id}/setup`;
+    try {
+      if ((await getInstanceState(c.evolution_instance)) === 'missing') await createInstance(c.evolution_instance);
+      // Webhook configurado já na criação: as mensagens chegam assim que o QR Code for lido
+      await setInstanceWebhook(c.evolution_instance, `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`);
+      return back(reply, setup, 'Instância criada. Agora leia o QR Code com o celular do cliente.');
+    } catch (err) {
+      return back(reply, setup, `Falha ao criar a instância: ${(err as Error).message}`);
+    }
+  });
+
+  app.post('/admin/clients/:id/whatsapp/logout', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return notFound(reply);
+    try {
+      await logoutInstance(c.evolution_instance);
+      return back(reply, `/admin/clients/${c.id}/setup`, 'WhatsApp desconectado.');
+    } catch (err) {
+      return back(reply, `/admin/clients/${c.id}/setup`, `Falha ao desconectar: ${(err as Error).message}`);
+    }
+  });
+
   app.post('/admin/clients/:id/evolution-webhook', async (req, reply) => {
     const c = getClient(db, (req.params as Form).id);
     if (!c) return notFound(reply);
     try {
       await setInstanceWebhook(c.evolution_instance, `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`);
-      return back(reply, `/admin/clients/${c.id}/setup`, 'WhatsApp conectado. Envie uma mensagem de teste para confirmar.');
+      return back(reply, `/admin/clients/${c.id}/setup`, 'WhatsApp ligado ao Vendeuzap. Envie uma mensagem de teste para confirmar.');
     } catch (err) {
       return back(reply, `/admin/clients/${c.id}/setup`, `Falha ao conectar: ${(err as Error).message}`);
     }

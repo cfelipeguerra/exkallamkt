@@ -79,8 +79,8 @@ Dica: comece com `DRY_RUN=true` para conferir os payloads no painel antes de env
 
 ## Onboarding de um cliente
 
-1. **Painel → Novo cliente**: nome, número, nome da instância da Evolution, regras de venda e credenciais (Pixel/Dataset + token da CAPI, GA4, Google Ads).
-2. **Configurar automaticamente** o webhook na instância (ou cadastre manualmente na Evolution a URL exibida, com os eventos `MESSAGES_UPSERT`, `SEND_MESSAGE`, `LABELS_EDIT`, `LABELS_ASSOCIATION`).
+1. **Painel → Novo cliente**: nome, número e regras de venda. Para um número novo, deixe a instância em branco. Se o número já estiver conectado no WhatsApp Manager, informe o nome exato da instância.
+2. **Instalação → Conectar o WhatsApp**: o Vendeuzap cria a instância na Evolution, mostra o QR Code (ou um código de 8 dígitos) e já configura o webhook. Para instâncias existentes, o botão "Ligar ao Vendeuzap" configura o webhook e avisa se a instância já envia mensagens para outra ferramenta (a Evolution aceita um webhook por instância).
 3. **Sincronizar etiquetas**, se for usar etiquetas do WhatsApp Business.
 4. Instale a **tag** no site (direto no HTML ou via Google Tag Manager como HTML personalizado) e/ou crie **links rastreáveis**.
 5. Envie ao cliente o **link do relatório** (somente leitura, sem login).
