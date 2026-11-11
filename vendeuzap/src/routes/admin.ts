@@ -474,7 +474,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const s = clientStats(db, c.id);
     const body = html`
       <div class="grid g3" style="margin-bottom:16px">
-        <div class="card kpi"><div class="l">Enviados com sucesso</div><div class="v" style="color:var(--brand-strong)">${s.eventsSent}</div><div class="h">últimos 30 dias</div></div>
+        <div class="card kpi"><div class="l">Enviados com sucesso</div><div class="v" style="color:var(--ok)">${s.eventsSent}</div><div class="h">últimos 30 dias</div></div>
         <div class="card kpi"><div class="l">Com falha</div><div class="v" style="color:${s.eventsFailed ? 'var(--err)' : 'inherit'}">${s.eventsFailed}</div><div class="h">verifique as credenciais em Configurações</div></div>
         <div class="card kpi"><div class="l">Na fila</div><div class="v">${s.eventsPending}</div><div class="h">serão enviados em instantes</div></div>
       </div>

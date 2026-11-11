@@ -93,28 +93,33 @@ export const STATUS_PILL: Record<string, Raw> = {
 
 const CSS = `
 :root{
-  --bg:#f5f7f6;--surface:#fff;--surface-2:#f0f3f2;--text:#14201b;--muted:#5b6b64;--line:#e2e8e5;
-  --brand:#12a150;--brand-strong:#0b7a3b;--brand-soft:#e3f6eb;--on-brand:#fff;
-  --info:#2563eb;--info-soft:#e6eefc;--warn:#a15c00;--warn-soft:#fdf1dc;--err:#c42b2b;--err-soft:#fde8e8;
+  --bg:#f3f5f9;--surface:#fff;--surface-2:#eef1f6;--text:#08213d;--muted:#56657c;--line:#dfe4ec;
+  --brand:#fe7e01;--brand-strong:#b45309;--brand-soft:#fff1e3;--on-brand:#08213d;
+  --navy:#08213d;--on-navy:#fff;--on-navy-muted:rgba(255,255,255,.72);
+  --ok:#15803d;--ok-soft:#e3f5e9;
+  --info:#2563eb;--info-soft:#e6eefc;--warn:#946200;--warn-soft:#fdf3d3;--err:#c42b2b;--err-soft:#fde8e8;
   --meta:#1d5bd8;--meta-soft:#e7eefc;--link:#7c3aed;--link-soft:#efe8fd;--site:#0f8a8a;--site-soft:#e0f4f4;
-  --shadow:0 1px 2px rgba(16,24,20,.05),0 1px 3px rgba(16,24,20,.06);--radius:12px
+  --shadow:0 1px 2px rgba(8,33,61,.05),0 1px 3px rgba(8,33,61,.07);--radius:12px
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0f1412;--surface:#171d1a;--surface-2:#1f2622;--text:#e7eeea;--muted:#9aaba3;--line:#2a332f;
-  --brand:#2fc06b;--brand-strong:#5fd68f;--brand-soft:#173826;--on-brand:#06210f;
-  --info:#7aa5ff;--info-soft:#1b2740;--warn:#f0aa45;--warn-soft:#3a2c14;--err:#ff7b7b;--err-soft:#3d1c1c;
+  --bg:#061629;--surface:#0b2240;--surface-2:#12305a;--text:#eef2f8;--muted:#9fb0c8;--line:#1c3a63;
+  --brand:#ff8a1a;--brand-strong:#ffb066;--brand-soft:#3a2310;--on-brand:#08213d;
+  --navy:#041120;
+  --ok:#4ade80;--ok-soft:#12321f;
+  --info:#7aa5ff;--info-soft:#1b2740;--warn:#facc15;--warn-soft:#3a3010;--err:#ff7b7b;--err-soft:#3d1c1c;
   --meta:#86a8ff;--meta-soft:#1c2744;--link:#b99bff;--link-soft:#2a2142;--site:#5fd1d1;--site-soft:#163333;
   --shadow:none}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font:15px/1.5 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
 a{color:inherit}
-.topbar{position:sticky;top:0;z-index:5;display:flex;gap:20px;align-items:center;padding:0 20px;height:58px;background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar{position:sticky;top:0;z-index:5;display:flex;gap:20px;align-items:center;padding:0 20px;height:60px;background:var(--navy);color:var(--on-navy);border-bottom:3px solid var(--brand)}
 .logo{display:flex;align-items:center;gap:8px;font-weight:750;font-size:17px;text-decoration:none;letter-spacing:-.01em}
-.logo i{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--brand);color:var(--on-brand);font-style:normal;font-size:15px}
+.logo{color:var(--on-navy)}
+.logo img{width:34px;height:34px;border-radius:9px;display:block}
 .topbar nav{display:flex;gap:4px;margin-left:auto}
-.topbar nav a{padding:7px 12px;border-radius:8px;text-decoration:none;color:var(--muted);font-size:14px}
-.topbar nav a:hover{background:var(--surface-2);color:var(--text)}
+.topbar nav a{padding:7px 12px;border-radius:8px;text-decoration:none;color:var(--on-navy-muted);font-size:14px;font-weight:550}
+.topbar nav a:hover{background:rgba(255,255,255,.1);color:var(--on-navy)}
 main{max-width:1120px;margin:0 auto;padding:24px 16px 72px}
 h1{font-size:24px;line-height:1.25;margin:0;letter-spacing:-.015em}
 h2{font-size:17px;margin:0 0 4px}
@@ -170,7 +175,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .src-ctwa{background:var(--meta-soft);color:var(--meta)}.src-link{background:var(--link-soft);color:var(--link)}
 .src-tag{background:var(--site-soft);color:var(--site)}.src-organic{background:var(--surface-2);color:var(--muted)}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600;background:var(--surface-2);color:var(--muted);white-space:nowrap}
-.pill-ok{background:var(--brand-soft);color:var(--brand-strong)}.pill-info{background:var(--info-soft);color:var(--info)}
+.pill-ok{background:var(--ok-soft);color:var(--ok)}.pill-info{background:var(--info-soft);color:var(--info)}
 .pill-warn{background:var(--warn-soft);color:var(--warn)}.pill-err{background:var(--err-soft);color:var(--err)}
 .dot{width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block}
 .btn,button{font:inherit;font-size:14px;font-weight:600;cursor:pointer;border:1px solid transparent;border-radius:9px;padding:8px 14px;background:var(--brand);color:var(--on-brand);text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -199,7 +204,7 @@ details.more[open] > summary::before{content:"▾ ";}
 .code{display:flex;gap:8px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:6px 6px 6px 12px;margin:8px 0}
 .code code{flex:1;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-x:auto;white-space:nowrap}
 pre{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface-2);padding:10px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:6px 0}
-.flash{display:flex;gap:10px;align-items:center;padding:12px 16px;border-radius:10px;margin-bottom:18px;background:var(--brand-soft);color:var(--brand-strong);font-weight:550}
+.flash{display:flex;gap:10px;align-items:center;padding:12px 16px;border-radius:10px;margin-bottom:18px;background:var(--ok-soft);color:var(--ok);font-weight:550}
 .flash.err{background:var(--err-soft);color:var(--err)}
 .banner{padding:10px 16px;background:var(--warn-soft);color:var(--warn);font-size:13.5px;text-align:center;font-weight:550}
 .steps{list-style:none;margin:0;padding:0}
@@ -261,10 +266,11 @@ export function layout(title: string, body: Raw, opts: LayoutOpts = {}): string 
   const isErr = flash ? /^(erro|falha)/i.test(flash) : false;
   return html`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Vendeuzap</title>
+<link rel="icon" type="image/png" href="/favicon.png"><meta name="theme-color" content="#08213d">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${raw(CSS)}</style></head><body>
 ${nav && config.dryRun ? html`<div class="banner">Modo simulação ativo: as conversões aparecem aqui, mas não estão sendo enviadas para Meta e Google.</div>` : ''}
-<header class="topbar"><a class="logo" href="${nav ? '/admin' : '#'}"><i>✓</i>Vendeuzap</a>
+<header class="topbar"><a class="logo" href="${nav ? '/admin' : '#'}"><img src="/logo.png" alt="" width="34" height="34">Vendeuzap</a>
 ${nav ? html`<nav><a href="/admin">Clientes</a><a href="/admin/clients/new">+ Novo cliente</a></nav>` : ''}</header>
 <main>${flash ? html`<div class="flash ${isErr ? 'err' : ''}">${isErr ? '⚠' : '✓'} ${flash}</div>` : ''}${body}</main>
 <script>${raw(COPY_JS)}</script></body></html>`.value;

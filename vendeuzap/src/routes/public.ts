@@ -6,7 +6,9 @@ import type { DB } from '../db.js';
 import { appendRef, isRefCode, newRefCode, normalizePhone } from '../lib/util.js';
 import type { Client, TrackingLink } from '../types.js';
 
-const TAG_JS = readFileSync(fileURLToPath(new URL('../../public/tag.js', import.meta.url)), 'utf8');
+const asset = (name: string) => readFileSync(fileURLToPath(new URL(`../../public/${name}`, import.meta.url)));
+const TAG_JS = asset('tag.js').toString('utf8');
+const IMAGES: Record<string, Buffer> = { 'logo.png': asset('logo.png'), 'favicon.png': asset('favicon.png') };
 
 const str = (v: unknown, max = 500): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 
@@ -45,6 +47,12 @@ export function insertClick(
 
 export function registerPublicRoutes(app: FastifyInstance, db: DB): void {
   app.get('/health', async () => ({ ok: true }));
+
+  for (const [name, buf] of Object.entries(IMAGES)) {
+    app.get(`/${name}`, async (_req, reply) =>
+      reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=86400').send(buf));
+  }
+  app.get('/favicon.ico', async (_req, reply) => reply.redirect('/favicon.png', 301));
 
   app.get('/t.js', async (_req, reply) => {
     reply.header('Content-Type', 'application/javascript; charset=utf-8').header('Cache-Control', 'public, max-age=3600');
