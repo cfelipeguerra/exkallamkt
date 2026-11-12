@@ -232,11 +232,14 @@ export async function getInstanceState(instance: string): Promise<InstanceState>
   }
 }
 
-/** Cria a instância (WhatsApp via Baileys) e já pede o QR Code. */
-export async function createInstance(instance: string): Promise<QrInfo> {
+/**
+ * Cria a instância (WhatsApp via Baileys) e já pede o QR Code. Com o número, a Evolution também
+ * gera o código de pareamento (8 caracteres) para conectar sem ler o QR Code.
+ */
+export async function createInstance(instance: string, number?: string | null): Promise<QrInfo> {
   const res = (await evo('/instance/create', {
     method: 'POST',
-    body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', qrcode: true }),
+    body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', qrcode: true, ...(number ? { number } : {}) }),
   })) as any;
   return { state: 'connecting', base64: res?.qrcode?.base64 ?? null, pairingCode: res?.qrcode?.pairingCode ?? null };
 }
@@ -251,6 +254,36 @@ export async function connectInstance(instance: string, number?: string | null):
   const state = res?.instance?.state ?? res?.instance?.status;
   if (state === 'open') return { state: 'open', base64: null, pairingCode: null };
   return { state: 'connecting', base64: res?.base64 ?? res?.qrcode?.base64 ?? null, pairingCode: res?.pairingCode ?? null };
+}
+
+export async function deleteInstance(instance: string): Promise<void> {
+  await evo(`/instance/delete/${encodeURIComponent(instance)}`, { method: 'DELETE' });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Gera o código de pareamento. A Evolution só usa o número quando a conexão começa
+ * (connectToWhatsapp com número); com a instância já aguardando o QR Code, o número é
+ * ignorado. Por isso a instância ainda não conectada é recriada já com o número.
+ */
+export async function requestPairingCode(instance: string, number: string): Promise<QrInfo> {
+  const state = await getInstanceState(instance);
+  if (state === 'open') return { state: 'open', base64: null, pairingCode: null };
+  if (state !== 'missing') {
+    await deleteInstance(instance);
+    await sleep(1500);
+  }
+  let lastErr: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await createInstance(instance, number);
+    } catch (err) {
+      lastErr = err;
+      await sleep(1500); // a remoção pode levar alguns instantes para liberar o nome
+    }
+  }
+  throw lastErr;
 }
 
 export async function logoutInstance(instance: string): Promise<void> {

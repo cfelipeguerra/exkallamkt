@@ -9,7 +9,7 @@ import { openDb, type DB } from '../src/db.js';
 
 /** Evolution API falsa, com as mesmas rotas e formatos de resposta da v2. */
 const fake = {
-  instances: new Map<string, { state: string; webhook: { url: string; enabled: boolean } | null }>(),
+  instances: new Map<string, { state: string; webhook: { url: string; enabled: boolean } | null; number?: string | null }>(),
   calls: [] as string[],
 };
 
@@ -34,14 +34,21 @@ before(async () => {
       const [, area, action, name] = url.pathname.split('/');
       const inst = name ? fake.instances.get(decodeURIComponent(name)) : undefined;
       if (area === 'instance' && action === 'create') {
-        const { instanceName } = JSON.parse(body);
-        fake.instances.set(instanceName, { state: 'connecting', webhook: null });
-        return send(201, { instance: { instanceName, status: 'connecting' }, qrcode: { base64: QR, code: 'abc', count: 1 } });
+        const { instanceName, number } = JSON.parse(body);
+        if (fake.instances.has(instanceName)) return send(403, { error: 'This name is already in use.' });
+        fake.instances.set(instanceName, { state: 'connecting', webhook: null, number: number ?? null });
+        // Como na Evolution real: o código de pareamento só existe quando a conexão começa com o número
+        return send(201, { instance: { instanceName, status: 'connecting' }, qrcode: { base64: QR, code: 'abc', count: 1, pairingCode: number ? 'ABCD1234' : null } });
       }
       if (!inst) return send(404, { status: 404, error: 'Not Found', response: { message: [`The "${name}" instance does not exist`] } });
       if (area === 'instance' && action === 'connectionState') return send(200, { instance: { instanceName: name, state: inst.state } });
       if (area === 'instance' && action === 'connect') {
-        return send(200, { pairingCode: url.searchParams.get('number') ? 'ABCD1234' : null, code: 'abc', base64: QR, count: 2 });
+        // Instância já aguardando QR: a Evolution ignora o número (connectToWhatsapp só roda no estado "close")
+        return send(200, { pairingCode: inst.number ? 'ABCD1234' : null, code: 'abc', base64: QR, count: 2 });
+      }
+      if (area === 'instance' && action === 'delete') {
+        fake.instances.delete(decodeURIComponent(name));
+        return send(200, { status: 'SUCCESS', error: false, response: { message: 'Instance deleted' } });
       }
       if (area === 'instance' && action === 'logout') {
         inst.state = 'close';
@@ -89,19 +96,33 @@ test('cliente novo sem instância: cria, mostra QR Code, conecta e liga o webhoo
   assert.match(await setupOf(c.id), /Aguardando leitura do QR Code/);
   const st = await app.inject({ method: 'GET', url: `/admin/clients/${c.id}/whatsapp/status`, headers: auth });
   assert.equal(st.json().base64, QR);
-  const pair = await app.inject({ method: 'GET', url: `/admin/clients/${c.id}/whatsapp/status?number=11988887777`, headers: auth });
+  // Pedir o código de 8 dígitos com a instância já aguardando o QR: recria a instância com o número
+  assert.equal(st.json().pairingCode, null, 'sem número, a Evolution não gera código');
+  const pair = await app.inject({
+    method: 'POST', url: `/admin/clients/${c.id}/whatsapp/pair`, headers: form, payload: 'number=(11)+98888-7777',
+  });
   assert.equal(pair.json().pairingCode, 'ABCD1234');
-  assert.ok(fake.calls.some((x) => x.includes('/instance/connect/vz-loja-nova?number=5511988887777')), 'número enviado com DDI');
+  assert.ok(fake.calls.includes('DELETE /instance/delete/vz-loja-nova'), 'instância não conectada foi recriada');
+  assert.equal(fake.instances.get('vz-loja-nova')!.number, '5511988887777', 'número enviado com DDI');
+  assert.equal(fake.instances.get('vz-loja-nova')!.webhook?.url, `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`, 'webhook refeito');
+  // As consultas seguintes continuam trazendo o código atualizado
+  assert.equal((await app.inject({ method: 'GET', url: `/admin/clients/${c.id}/whatsapp/status`, headers: auth })).json().pairingCode, 'ABCD1234');
+  const bad = await app.inject({ method: 'POST', url: `/admin/clients/${c.id}/whatsapp/pair`, headers: form, payload: 'number=123' });
+  assert.match(bad.json().error, /DDD/);
 
-  // Cliente leu o QR Code
-  inst.state = 'open';
+  // Cliente conectou
+  const inst2 = fake.instances.get('vz-loja-nova')!;
+  inst2.state = 'open';
   assert.equal((await app.inject({ method: 'GET', url: `/admin/clients/${c.id}/whatsapp/status`, headers: auth })).json().state, 'open');
   assert.match(await setupOf(c.id), /ligado ao Vendeuzap/);
+  // Já conectado: pedir código não recria a instância
+  const again = await app.inject({ method: 'POST', url: `/admin/clients/${c.id}/whatsapp/pair`, headers: form, payload: 'number=11988887777' });
+  assert.equal(again.json().state, 'open');
 
   // Desconectar
   const out = await app.inject({ method: 'POST', url: `/admin/clients/${c.id}/whatsapp/logout`, headers: auth });
   assert.equal(out.statusCode, 303);
-  assert.equal(inst.state, 'close');
+  assert.equal(inst2.state, 'close');
 });
 
 test('instância já conectada com webhook de outra ferramenta: avisa antes de substituir', async () => {

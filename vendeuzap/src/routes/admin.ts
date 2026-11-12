@@ -5,7 +5,7 @@ import type { DB } from '../db.js';
 import { now } from '../db.js';
 import { processEvent } from '../dispatcher.js';
 import {
-  connectInstance, createInstance, evolutionConfigured, fetchLabels, findInstanceWebhook, getInstanceState,
+  connectInstance, createInstance, evolutionConfigured, requestPairingCode, fetchLabels, findInstanceWebhook, getInstanceState,
   type InstanceState, logoutInstance, setInstanceWebhook,
 } from '../integrations/evolution.js';
 import { googleAdsApiEnabled } from '../integrations/platforms.js';
@@ -223,7 +223,11 @@ if(d.base64){img.src=d.base64;img.hidden=false;wait.hidden=true}
 if(d.pairingCode&&pc){pc.textContent=d.pairingCode.replace(/(.{4})(.{4})/,'$1-$2');pc.hidden=false}}
 function poll(q){fetch(url+(q||''),{credentials:'same-origin'}).then(function(r){return r.json()}).then(show).catch(function(){})}
 poll();setInterval(function(){if(!stopped)poll()},5000);
-var f=box.querySelector('form.pair');if(f)f.addEventListener('submit',function(e){e.preventDefault();var n=f.querySelector('input').value.replace(/\\D/g,'');if(n.length<10)return;if(n.length<=11)n='55'+n;poll('?number='+n)});})();`;
+var f=box.querySelector('form.pair');if(f)f.addEventListener('submit',function(e){e.preventDefault();var b=f.querySelector('button'),n=f.querySelector('input').value;
+b.disabled=true;b.textContent='Gerando… (até 15 s)';pc.hidden=true;
+fetch(url.replace(/status$/,'pair'),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'number='+encodeURIComponent(n)})
+.then(function(r){return r.json()}).then(function(d){b.disabled=false;b.textContent='Gerar novo código';if(d.error&&!d.pairingCode){wait.hidden=false;wait.textContent=d.error}show(d)})
+.catch(function(){b.disabled=false;b.textContent='Gerar código'})});})();`;
 
 function qrPanel(c: Client, statusUrl: string): Raw {
   return html`<div class="qr" data-qr="${statusUrl}">
@@ -238,7 +242,7 @@ function qrPanel(c: Client, statusUrl: string): Raw {
       <details class="more"><summary>Conectar com um código no lugar do QR Code</summary>
         <form class="row pair" style="margin-top:10px"><input name="number" inputmode="tel" value="${formatPhone(c.whatsapp_number)}" style="max-width:220px" aria-label="Número do WhatsApp"><button class="ghost sm">Gerar código</button></form>
         <p class="pair-code" hidden></p>
-        <p class="help">No celular: Aparelhos conectados › Conectar um aparelho › <b>Conectar com número de telefone</b>, e digite o código.</p>
+        <p class="help">No celular: Aparelhos conectados › Conectar um aparelho › <b>Conectar com número de telefone</b>, e digite o código. O código muda a cada poucos segundos; use sempre o que estiver aparecendo aqui. Se não funcionar, tente o número sem o 9 depois do DDD (algumas contas antigas são registradas assim).</p>
       </details>
     </div>
   </div><script>${raw(QR_SCRIPT)}</script>`;
@@ -788,6 +792,26 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
       const state = await getInstanceState(c.evolution_instance);
       if (state === 'missing' || state === 'open') return { state };
       return await connectInstance(c.evolution_instance, normalizePhone((req.query as Form).number || ''));
+    } catch (err) {
+      return { state: 'error', error: (err as Error).message.slice(0, 200) };
+    }
+  });
+
+  /** Gera o código de pareamento para o número informado (recria a instância ainda não conectada). */
+  app.post('/admin/clients/:id/whatsapp/pair', async (req, reply) => {
+    const c = getClient(db, (req.params as Form).id);
+    if (!c) return reply.code(404).send({ error: 'cliente não encontrado' });
+    const number = normalizePhone(((req.body as Form) || {}).number || '');
+    if (!number || number.length < 12) return { state: 'error', error: 'Informe o número com DDD.' };
+    try {
+      const info = await requestPairingCode(c.evolution_instance, number);
+      if (info.state !== 'open') {
+        await setInstanceWebhook(c.evolution_instance, `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`);
+      }
+      if (info.state !== 'open' && !info.pairingCode) {
+        return { ...info, error: 'O WhatsApp Manager não devolveu o código. Aguarde alguns segundos: ele aparece aqui assim que for gerado.' };
+      }
+      return info;
     } catch (err) {
       return { state: 'error', error: (err as Error).message.slice(0, 200) };
     }
