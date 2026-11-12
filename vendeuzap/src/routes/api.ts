@@ -21,8 +21,11 @@ function clientByApiToken(db: DB, req: FastifyRequest): Client | undefined {
   return c && safeEq(c.api_token, tokenValue) ? c : undefined;
 }
 
-/** Horário em UTC sem sufixo; o fuso vai na linha "Parameters:TimeZone=+0000". */
-const csvTime = (epochS: number): string => new Date(epochS * 1000).toISOString().slice(0, 19).replace('T', ' ');
+/**
+ * Horário em UTC com o fuso na própria célula ("2026-11-12 13:45:00+00:00"). O fuso não vai numa
+ * linha "Parameters:TimeZone" porque a tela de conexão do Google lê a primeira linha como cabeçalho.
+ */
+const csvTime = (epochS: number): string => `${new Date(epochS * 1000).toISOString().slice(0, 19).replace('T', ' ')}+00:00`;
 
 const csvCell = (v: unknown): string => {
   const s = String(v ?? '');
@@ -111,28 +114,30 @@ export function registerApiRoutes(app: FastifyInstance, db: DB): void {
     const client = db.prepare('SELECT * FROM clients WHERE api_token = ?').get(token) as Client | undefined;
     if (!client) return reply.code(404).send('not found');
     const since = now() - 60 * 86400;
-    const lines = ['Parameters:TimeZone=+0000', 'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency'];
+    // A primeira linha é o cabeçalho: o Google usa esses nomes no "Mapear campos".
+    // Order ID identifica cada conversão e evita duplicar as que já foram importadas em dias anteriores.
+    const lines = ['Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,Order ID'];
     if (client.gads_purchase_action_name) {
       const rows = db
         .prepare(
-          `SELECT k.gclid, s.created_at, s.value, s.currency FROM sales s
+          `SELECT s.id, k.gclid, s.created_at, s.value, s.currency FROM sales s
            JOIN contacts c ON c.id = s.contact_id JOIN clicks k ON k.id = c.click_id
            WHERE s.client_id = ? AND s.created_at >= ? AND k.gclid IS NOT NULL ORDER BY s.id`,
         )
-        .all(client.id, since) as { gclid: string; created_at: number; value: number; currency: string }[];
+        .all(client.id, since) as { id: number; gclid: string; created_at: number; value: number; currency: string }[];
       for (const r of rows) {
-        lines.push([r.gclid, client.gads_purchase_action_name, csvTime(r.created_at), r.value, r.currency].map(csvCell).join(','));
+        lines.push([r.gclid, client.gads_purchase_action_name, csvTime(r.created_at), r.value, r.currency, `venda-${r.id}`].map(csvCell).join(','));
       }
     }
     if (client.gads_lead_action_name) {
       const rows = db
         .prepare(
-          `SELECT k.gclid, c.first_message_at FROM contacts c JOIN clicks k ON k.id = c.click_id
+          `SELECT c.id, k.gclid, c.first_message_at FROM contacts c JOIN clicks k ON k.id = c.click_id
            WHERE c.client_id = ? AND c.first_message_at >= ? AND k.gclid IS NOT NULL AND c.messages_in > 0 ORDER BY c.id`,
         )
-        .all(client.id, since) as { gclid: string; first_message_at: number }[];
+        .all(client.id, since) as { id: number; gclid: string; first_message_at: number }[];
       for (const r of rows) {
-        lines.push([r.gclid, client.gads_lead_action_name, csvTime(r.first_message_at), '', ''].map(csvCell).join(','));
+        lines.push([r.gclid, client.gads_lead_action_name, csvTime(r.first_message_at), '', '', `lead-${r.id}`].map(csvCell).join(','));
       }
     }
     reply.header('Content-Type', 'text/csv; charset=utf-8').header('Cache-Control', 'no-store');

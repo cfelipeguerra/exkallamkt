@@ -156,7 +156,9 @@ test('API de vendas, feed CSV e relatório', async () => {
 
   const csv = await app.inject({ method: 'GET', url: '/feeds/google-ads/api-token.csv' });
   assert.equal(csv.statusCode, 200);
-  assert.match(csv.body, /GCLID456,Venda WhatsApp,\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},1250,BRL/);
+  const csvLines = csv.body.trim().split('\n');
+  assert.equal(csvLines[0], 'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,Order ID', 'cabeçalho na 1ª linha');
+  assert.match(csv.body, /GCLID456,Venda WhatsApp,\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\+00:00,1250,BRL,venda-\d+/);
 
   const rep = await app.inject({ method: 'GET', url: '/report/rep-token' });
   assert.equal(rep.statusCode, 200);
