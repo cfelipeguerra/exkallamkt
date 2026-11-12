@@ -692,7 +692,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   -d '{"phone":"5511999999999","value":199.90,"external_ref":"pedido-123"}'</pre>
       <h3 style="margin-top:14px">Importação agendada no Google Ads</h3>
       ${c.gads_purchase_action_name || c.gads_lead_action_name
-        ? html`<p class="muted small">No Google Ads: Metas › Conversões › Uploads › Programações › nova programação por HTTPS, com esta URL:</p>${copyable(`${config.baseUrl}/feeds/google-ads/${c.api_token}.csv`)}`
+        ? html`<p class="muted small">No Google Ads: Metas › Conversões › Uploads › Programações › nova programação por HTTPS, com esta URL:</p>${copyable(`${config.baseUrl}/feeds/google-ads/${c.api_token}.csv`)}
+          <p class="help">O Google pede <b>nome de usuário</b> e <b>senha</b>: preencha <code>vendeuzap</code> nos dois. O Vendeuzap não confere esses campos, porque a proteção é o token secreto que já está na URL.</p>`
         : html`<p class="muted small">Preencha o nome da conversão de venda do Google Ads em Configurações para liberar a URL de importação.</p>`}
     </details>`;
     send(reply, clientPage(db, c, 'setup', body, flashOf(req)));
