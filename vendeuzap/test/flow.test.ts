@@ -160,6 +160,14 @@ test('API de vendas, feed CSV e relatório', async () => {
   assert.equal(csvLines[0], 'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,Order ID', 'cabeçalho na 1ª linha');
   assert.match(csv.body, /GCLID456,Venda WhatsApp,\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\+00:00,1250,BRL,venda-\d+/);
 
+  // Cliente sem nenhuma venda do Google: o arquivo traz uma linha de exemplo para a configuração
+  db.prepare(`INSERT INTO clients (name, slug, whatsapp_number, evolution_instance, webhook_token, report_token, api_token, gads_purchase_action_name)
+              VALUES ('Sem Google', 'sem-google', '5511900000009', 'sem-google', 'wh-x', 'rep-x', 'api-x', 'Venda WhatsApp')`).run();
+  const empty = (await app.inject({ method: 'GET', url: '/feeds/google-ads/api-x.csv' })).body.trim().split('\n');
+  assert.equal(empty.length, 2);
+  assert.match(empty[1], /^EXEMPLO-VENDEUZAP-IGNORAR,Venda WhatsApp,.+\+00:00,0,BRL,exemplo-vendeuzap$/);
+  assert.ok(!csv.body.includes('EXEMPLO'), 'com vendas reais, sem linha de exemplo');
+
   const rep = await app.inject({ method: 'GET', url: '/report/rep-token' });
   assert.equal(rep.statusCode, 200);
   assert.match(rep.body, /Loja Teste/);

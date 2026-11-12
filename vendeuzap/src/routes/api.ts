@@ -140,6 +140,14 @@ export function registerApiRoutes(app: FastifyInstance, db: DB): void {
         lines.push([r.gclid, client.gads_lead_action_name, csvTime(r.first_message_at), '', '', `lead-${r.id}`].map(csvCell).join(','));
       }
     }
+    // Sem nenhuma conversão ainda, o Google não consegue detectar as colunas na configuração
+    // ("pelo menos uma linha de dados válidos"). Enviamos uma linha de exemplo com um GCLID
+    // inválido: o Google a rejeita na importação (não vira conversão) e ela some sozinha
+    // assim que existir a primeira venda real vinda do Google.
+    if (lines.length === 1) {
+      const name = client.gads_purchase_action_name || client.gads_lead_action_name || 'Venda WhatsApp';
+      lines.push(['EXEMPLO-VENDEUZAP-IGNORAR', name, csvTime(now()), 0, client.currency, 'exemplo-vendeuzap'].map(csvCell).join(','));
+    }
     reply.header('Content-Type', 'text/csv; charset=utf-8').header('Cache-Control', 'no-store');
     return lines.join('\n') + '\n';
   });
