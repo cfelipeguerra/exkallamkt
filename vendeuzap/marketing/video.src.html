@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Vendeuzap vídeo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root{--navy:#08213d;--navy2:#0f2f55;--orange:#fe7e01;--white:#fff;--soft:#b9c6d8;--chat:#e9eef4;--out:#ffe8d1;--ok:#4ade80;
+--display:"Bricolage Grotesque",system-ui,sans-serif;--body:"Figtree",system-ui,sans-serif;--mono:"IBM Plex Mono",monospace}
+*{box-sizing:border-box;margin:0}
+html,body{width:1080px;height:1920px;overflow:hidden;background:var(--navy);color:var(--white);font-family:var(--body)}
+.stage{position:relative;width:1080px;height:1920px;background:
+ radial-gradient(900px 700px at 80% 10%,rgba(254,126,1,.16),transparent 60%),
+ radial-gradient(800px 800px at 10% 95%,rgba(255,255,255,.06),transparent 60%),var(--navy)}
+.brand{position:absolute;top:90px;left:80px;display:flex;align-items:center;gap:20px;font:800 48px var(--display);animation:fade .6s ease both}
+.brand img{width:76px;height:76px;border-radius:18px}
+.kicker{position:absolute;top:210px;left:80px;right:80px;font:800 72px/1.05 var(--display);letter-spacing:-.02em;animation:up .7s .2s ease both}
+.kicker em{font-style:normal;color:var(--orange)}
+.phone{position:absolute;top:470px;left:80px;right:80px;background:var(--chat);border-radius:44px;padding:36px;color:var(--navy);box-shadow:0 40px 80px rgba(0,0,0,.4);animation:up .7s .5s ease both}
+.head{display:flex;align-items:center;gap:20px;padding-bottom:26px;margin-bottom:26px;border-bottom:2px solid rgba(8,33,61,.1)}
+.av{width:72px;height:72px;border-radius:50%;background:var(--orange);display:grid;place-items:center;font:800 30px var(--body);color:var(--navy)}
+.head b{font:700 34px var(--body);display:block}.head span{font:500 26px var(--body);color:#55657c}
+.msg{max-width:82%;padding:20px 24px;border-radius:24px;font:500 34px/1.35 var(--body);margin-bottom:18px;box-shadow:0 2px 2px rgba(8,33,61,.08)}
+.in{background:#fff;border-top-left-radius:8px}
+.out{background:var(--out);margin-left:auto;border-top-right-radius:8px}
+.ad{display:block;font:600 24px var(--body);color:#55657c;border-left:6px solid var(--orange);padding-left:14px;margin-bottom:10px}
+.t{display:block;text-align:right;font:500 22px var(--body);color:#7a8799;margin-top:4px}
+.typing{display:inline-flex;gap:10px;padding:24px 28px;background:#fff;border-radius:24px;border-top-left-radius:8px;margin-bottom:18px}
+.typing i{width:14px;height:14px;border-radius:50%;background:#9aa6b6;animation:dot 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+.m1{animation:pop .45s 1.4s ease both}
+.ty1{animation:pop .3s 2.6s ease both, gone .2s 3.5s ease forwards}
+.m2{animation:pop .45s 3.6s ease both}
+.m3{animation:pop .45s 5.0s ease both}
+.m4{animation:pop .45s 6.3s ease both}
+.detect{position:absolute;left:80px;right:80px;top:1420px;display:flex;align-items:center;gap:26px;background:var(--orange);color:var(--navy);border-radius:30px;padding:30px 36px;box-shadow:0 20px 50px rgba(254,126,1,.35);animation:pop .5s 7.3s cubic-bezier(.2,1.4,.4,1) both}
+.check{width:84px;height:84px;border-radius:50%;background:var(--navy);color:var(--orange);display:grid;place-items:center;font:800 48px var(--body);flex:none}
+.detect b{display:block;font:800 40px/1.1 var(--display)}.detect span{font:600 30px var(--body)}
+.dest{position:absolute;left:80px;right:80px;top:1650px;display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.card{background:var(--navy2);border:2px solid rgba(255,255,255,.12);border-radius:28px;padding:28px 30px;display:grid;gap:8px}
+.card b{font:800 36px var(--display)}.card code{font:500 24px var(--mono);color:var(--soft)}
+.card .ok{font:700 28px var(--body);color:var(--ok)}
+.c1{animation:up .5s 8.6s ease both}.c2{animation:up .5s 9.0s ease both}
+.flow{position:absolute;width:22px;height:22px;border-radius:50%;background:var(--orange);box-shadow:0 0 24px var(--orange);top:1540px;opacity:0}
+.f1{left:300px;animation:fly1 .9s 8.2s ease-in both}.f2{left:740px;animation:fly1 .9s 8.5s ease-in both}
+.end{position:absolute;inset:0;background:var(--navy);display:grid;place-content:center;justify-items:center;gap:40px;text-align:center;padding:0 90px;animation:fade .6s 11.2s ease both}
+.end img{width:180px;height:180px;border-radius:40px;animation:pop .6s 11.5s ease both}
+.end h1{font:800 84px/1.05 var(--display);letter-spacing:-.02em;animation:up .6s 11.7s ease both}
+.end h1 em{font-style:normal;color:var(--orange)}
+.end p{font:600 38px var(--body);color:var(--soft);animation:up .6s 12.1s ease both}
+.end .url{font:500 34px var(--mono);color:var(--orange);animation:up .6s 12.4s ease both}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes up{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+@keyframes pop{from{opacity:0;transform:translateY(20px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes gone{to{opacity:0;height:0;padding:0;margin:0}}
+@keyframes dot{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-8px);opacity:1}}
+@keyframes fly1{0%{opacity:0;transform:translateY(0)}20%{opacity:1}100%{opacity:0;transform:translateY(120px)}}
+</style></head><body>
+<div class="stage">
+  <div class="brand"><img src="data:image/png;base64,__LOGO__" alt="">Vendeuzap</div>
+  <div class="kicker">Do anúncio à <em>venda</em>, tudo no seu WhatsApp.</div>
+  <div class="phone">
+    <div class="head"><span class="av">AS</span><div><b>Ana Souza</b><span>chegou por anúncio</span></div></div>
+    <div class="msg in m1"><span class="ad">Anúncio: Óculos de grau 30% OFF</span>Oi! Vi o anúncio dos óculos, ainda está valendo?</div>
+    <div class="typing ty1"><i></i><i></i><i></i></div>
+    <div class="msg out m2">Está sim! Com as lentes, o total fica <b>R$&nbsp;389,90</b>.<span class="t">10:42</span></div>
+    <div class="msg in m3">Fechado, já fiz o Pix 😊</div>
+    <div class="msg out m4"><b>Pagamento confirmado!</b> Obrigado pela compra.<span class="t">10:51</span></div>
+  </div>
+  <div class="detect"><span class="check">✓</span><div><b>Venda identificada</b><span>R$ 389,90 · Anúncio no WhatsApp</span></div></div>
+  <span class="flow f1"></span><span class="flow f2"></span>
+  <div class="dest">
+    <div class="card c1"><b>Meta</b><code>Compra · R$ 389,90</code><span class="ok">✓ enviado</span></div>
+    <div class="card c2"><b>Google Analytics</b><code>purchase · R$ 389,90</code><span class="ok">✓ enviado</span></div>
+  </div>
+  <div class="end">
+    <img src="data:image/png;base64,__LOGO__" alt="">
+    <h1>Descubra quais anúncios <em>vendem</em> no seu WhatsApp.</h1>
+    <p>Cada venda enviada para a Meta e o Google, com o valor.</p>
+    <span class="url">vendeuzap.divagencia.com</span>
+  </div>
+</div>
+</body></html>
