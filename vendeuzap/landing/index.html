@@ -1,0 +1,330 @@
+<title>Vendeuzap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Saiba quais anúncios vendem no seu WhatsApp e envie cada venda para a Meta e o Google.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: faixa azul-marinho de abertura com a conversa real à direita; seções claras em coluna única de leitura,
+   com blocos em grade só onde o conteúdo é paralelo. Laranja só em ações e no que é "venda". */
+:root{
+  --navy:#08213d; --navy-2:#0f2f55; --on-navy:#ffffff; --on-navy-soft:#b9c6d8;
+  --orange:#fe7e01; --orange-ink:#08213d; --orange-soft:#fff1e3; --orange-strong:#b45309;
+  --bg:#f4f6fa; --surface:#ffffff; --surface-2:#eaeef5; --fg:#08213d; --muted:#55657c; --line:#dce3ee;
+  --ok:#15803d; --ok-soft:#e3f5e9;
+  --bubble-in:#ffffff; --bubble-out:#ffe8d1; --chat-bg:#e9eef4; --chat-fg:#08213d;
+  --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body:"Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --navy:#061629; --navy-2:#0b2240; --on-navy-soft:#a9b8cc;
+  --orange:#ff8a1a; --orange-soft:#3a2310; --orange-strong:#ffb066;
+  --bg:#0a1a2f; --surface:#0f2440; --surface-2:#163056; --fg:#eef2f8; --muted:#a3b2c7; --line:#1f3a60;
+  --ok:#4ade80; --ok-soft:#12321f; --bubble-in:#16304f; --bubble-out:#4a2d12; --chat-bg:#13294a; --chat-fg:#eef2f8; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --navy:#061629; --navy-2:#0b2240; --on-navy-soft:#a9b8cc;
+  --orange:#ff8a1a; --orange-soft:#3a2310; --orange-strong:#ffb066;
+  --bg:#0a1a2f; --surface:#0f2440; --surface-2:#163056; --fg:#eef2f8; --muted:#a3b2c7; --line:#1f3a60;
+  --ok:#4ade80; --ok-soft:#12321f; --bubble-in:#16304f; --bubble-out:#4a2d12; --chat-bg:#13294a; --chat-fg:#eef2f8; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--navy)}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);line-height:1.08;letter-spacing:-.02em;text-wrap:balance;margin:0}
+h2{font-size:clamp(28px,4vw,42px);font-weight:800}
+h3{font-size:20px;font-weight:600;letter-spacing:-.01em}
+p{margin:0}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--orange-strong)}
+.lede{font-size:18px;color:var(--muted);max-width:62ch}
+.btn{display:inline-flex;align-items:center;gap:10px;font:700 16px/1 var(--body);padding:16px 22px;border-radius:12px;text-decoration:none;border:2px solid transparent;transition:transform .15s ease, box-shadow .15s ease}
+.btn-primary{background:var(--orange);color:var(--orange-ink)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(254,126,1,.28)}
+.btn-ghost{border-color:rgba(255,255,255,.28);color:var(--on-navy)}
+.btn-ghost:hover{border-color:var(--on-navy)}
+.btn:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var(--orange);outline-offset:3px}
+
+/* Topo */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--navy);color:var(--on-navy);border-bottom:3px solid var(--orange)}
+.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:12px}
+.brand{display:flex;align-items:center;gap:10px;font:800 20px/1 var(--display);letter-spacing:-.01em;text-decoration:none}
+.brand img{width:36px;height:36px;border-radius:9px}
+.top nav{display:flex;gap:20px;align-items:center;font-weight:600;font-size:15px}
+.top nav a{text-decoration:none;color:var(--on-navy-soft)}
+.top nav a:hover{color:var(--on-navy)}
+.top nav a.btn{color:var(--orange-ink)}
+.top .btn{padding:10px 16px;font-size:14px}
+@media (max-width:720px){.top nav a:not(.btn){display:none}}
+
+/* Hero */
+.hero{background:var(--navy);color:var(--on-navy);overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding-block:72px 84px}
+.hero h1{font-size:clamp(38px,6vw,68px);font-weight:800}
+.hero h1 em{font-style:normal;color:var(--orange)}
+.hero .lede{color:var(--on-navy-soft);margin-top:20px;font-size:19px}
+.hero-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
+.hero-note{margin-top:18px;font-size:14px;color:var(--on-navy-soft)}
+@media (max-width:900px){.hero .wrap{grid-template-columns:1fr;padding-block:48px 56px}}
+
+/* Conversa */
+.chat{background:var(--chat-bg);border-radius:22px;padding:18px;color:var(--chat-fg);box-shadow:0 30px 60px rgba(0,0,0,.35);max-width:440px;justify-self:end;width:100%}
+.chat-head{display:flex;align-items:center;gap:10px;padding:2px 4px 14px;border-bottom:1px solid rgba(8,33,61,.12);margin-bottom:14px;font-weight:700;font-size:14px}
+.chat-head .av{width:30px;height:30px;border-radius:50%;background:var(--orange);display:grid;place-items:center;color:var(--orange-ink);font-size:13px;font-weight:800}
+.chat-head small{display:block;font-weight:500;color:var(--muted);font-size:12px}
+.msg{max-width:84%;padding:10px 12px;border-radius:12px;font-size:14.5px;line-height:1.45;margin-bottom:8px;box-shadow:0 1px 1px rgba(8,33,61,.08);animation:pop .5s ease both}
+.msg.in{background:var(--bubble-in);border-top-left-radius:4px}
+.msg.out{background:var(--bubble-out);margin-left:auto;border-top-right-radius:4px}
+.msg .ad{display:block;font-size:12px;color:var(--muted);border-left:3px solid var(--orange);padding-left:8px;margin-bottom:6px}
+.msg code{font:500 12.5px var(--mono);background:rgba(254,126,1,.16);padding:1px 5px;border-radius:5px}
+.msg time{display:block;text-align:right;font-size:11px;color:var(--muted);margin-top:2px}
+.receipt{margin-top:14px;background:var(--navy);color:var(--on-navy);border-radius:12px;padding:14px 16px;font:400 13px/1.7 var(--mono);animation:pop .5s ease both;animation-delay:1.6s}
+.receipt b{font-weight:500;color:var(--orange)}
+.receipt .row{display:flex;justify-content:space-between;gap:12px}
+.receipt .row span:first-child{color:var(--on-navy-soft)}
+.receipt .sent{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.2)}
+.tag{font:500 12px var(--mono);padding:3px 8px;border-radius:99px;background:rgba(74,222,128,.16);color:#86efac}
+.tag.na{background:rgba(255,255,255,.08);color:var(--on-navy-soft)}
+.m1{animation-delay:.2s}.m2{animation-delay:.6s}.m3{animation-delay:1s}.m4{animation-delay:1.3s}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.msg,.receipt{animation:none}}
+@media (max-width:900px){.chat{justify-self:stretch;max-width:none}}
+
+/* Seções */
+section{padding-block:88px}
+section + section{border-top:1px solid var(--line)}
+.head{display:grid;gap:14px;max-width:760px;margin-bottom:44px}
+
+.pains{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.pain{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:grid;gap:10px;align-content:start}
+.pain p{color:var(--muted)}
+@media (max-width:860px){.pains{grid-template-columns:1fr}}
+
+.steps{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:28px;counter-reset:s}
+.step{display:grid;gap:12px;align-content:start;counter-increment:s}
+.step::before{content:counter(s);font:800 44px/1 var(--display);color:var(--orange)}
+.step p{color:var(--muted)}
+.step ul{margin:4px 0 0;padding-left:18px;color:var(--muted);display:grid;gap:4px}
+@media (max-width:860px){.steps{grid-template-columns:1fr}}
+
+/* Relatório */
+.report{display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:center}
+.report-card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 20px 40px rgba(8,33,61,.08);min-width:0}
+.report-card .label{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}
+.pill{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:99px;background:var(--surface-2);color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.kpi{background:var(--surface-2);border-radius:12px;padding:12px 14px}
+.kpi span{display:block;font-size:12px;color:var(--muted);font-weight:600}
+.kpi b{font:800 22px/1.2 var(--display);font-variant-numeric:tabular-nums}
+.bars{display:grid;gap:14px}
+.bar{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:14px}
+.bar .track{grid-column:1/-1;height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.bar .fill{height:100%;border-radius:99px;background:var(--orange)}
+.bar b{font-variant-numeric:tabular-nums}
+.checks{list-style:none;padding:0;margin:24px 0 0;display:grid;gap:12px}
+.checks li{display:grid;grid-template-columns:24px 1fr;gap:10px;color:var(--muted)}
+.checks li::before{content:"✓";width:24px;height:24px;border-radius:50%;background:var(--ok-soft);color:var(--ok);display:grid;place-items:center;font-weight:800;font-size:13px}
+.checks b{color:var(--fg)}
+@media (max-width:900px){.report{grid-template-columns:1fr}}
+@media (max-width:420px){.kpis{grid-template-columns:1fr 1fr}.kpis .kpi:last-child{grid-column:1/-1}}
+
+/* Destinos */
+.dest{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.dest div{border:1px solid var(--line);border-radius:var(--radius);padding:20px;background:var(--surface);display:grid;gap:6px;align-content:start}
+.dest b{font:600 17px var(--display)}
+.dest span{font-size:14px;color:var(--muted)}
+.dest code{font:500 12.5px var(--mono);color:var(--orange-strong)}
+@media (max-width:900px){.dest{grid-template-columns:1fr 1fr}}
+@media (max-width:480px){.dest{grid-template-columns:1fr}}
+
+.who{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+.who span{padding:10px 16px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font-weight:600;font-size:15px}
+
+/* Privacidade */
+.privacy{background:var(--surface-2)}
+.privacy .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.privacy .grid div{display:grid;gap:8px;align-content:start}
+.privacy p{color:var(--muted)}
+@media (max-width:860px){.privacy .grid{grid-template-columns:1fr}}
+
+/* FAQ */
+.faq{max-width:820px}
+.faq details{border-bottom:1px solid var(--line);padding-block:18px}
+.faq summary{cursor:pointer;font:600 18px/1.35 var(--display);list-style:none;display:flex;justify-content:space-between;gap:16px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font:400 26px/1 var(--body);color:var(--orange-strong);transition:transform .2s}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq details p{margin-top:10px;color:var(--muted);max-width:68ch}
+
+/* Final */
+.final{background:var(--navy);color:var(--on-navy);border-top:0}
+.final .wrap{display:grid;gap:22px;justify-items:start;max-width:860px}
+.final h2{font-size:clamp(32px,5vw,52px)}
+.final p{color:var(--on-navy-soft);font-size:18px;max-width:58ch}
+footer{background:var(--navy);color:var(--on-navy-soft);font-size:14px;border-top:1px solid rgba(255,255,255,.1)}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-block:24px}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#inicio"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABCGlDQ1BJQ0MgUHJvZmlsZQAAeJxjYGA8wQAELAYMDLl5JUVB7k4KEZFRCuwPGBiBEAwSk4sLGHADoKpv1yBqL+viUYcLcKakFicD6Q9ArFIEtBxopAiQLZIOYWuA2EkQtg2IXV5SUAJkB4DYRSFBzkB2CpCtkY7ETkJiJxcUgdT3ANk2uTmlyQh3M/Ck5oUGA2kOIJZhKGYIYnBncAL5H6IkfxEDg8VXBgbmCQixpJkMDNtbGRgkbiHEVBYwMPC3MDBsO48QQ4RJQWJRIliIBYiZ0tIYGD4tZ2DgjWRgEL7AwMAVDQsIHG5TALvNnSEfCNMZchhSgSKeDHkMyQx6QJYRgwGDIYMZAKbWPz9HbOBQAAAlo0lEQVR42q1debhdVXVfa+197vCm5IUEEgIJiUHDoIBhEMF+opW2yOD0Fa3M9GudmAQZRJRJULFWq1htrVBQK0W0AhWZREmpQFVwYDLEEAKEIRCSN9979lr9Y0/rnHtf9Pv0KSS8d98956y991q/9Vu/tS62lx0ECAAICP4r/s3/WwQEQBAI0s97vgQEANMPWDh8G4CQ9DcREBBEJH0/v4lI+DGg/90/7Mu/eFu/wsKERoARAABZGBFF/B0iAiKif0x/h/EFAgDWP6+AAIdnx8qt+9cFo2HvI6WbQ/RXFGHAcGFATIZGJEjvhP2fREQQ86P6W0TEbdplW7ZLdyjCEtYMQRCRAIKJvGnCU4ZrxacGsQL+cfwOkLTy6kaidcVbOF3Ifx/Ar7yIf2f/PUS1J8PK5EukH6G/RUxbFwVEQMhvWAw2quzwYMdgI389Ee7dkv6CHHYKIQoI+n0qwIAIkpZWvBVEJDxgvG3buyzs1y2tDyJIvtFow2hNyTeK2bbpyWrLXzW99B7UuHdQUG1+dfr0m4qIiN5uWDOlhNsX9C/OLkIQQBBQAAn9FkK9a9PJIHVyRD0ziPjF9DtR6nZE9ZTI6a39PRCif3zJt9XvQGH+t3/s9L76t8LfBWpvpa2TzlztF1lqr0KEvN6IQgQAKKzXlsIhAAg7SGp37Y9cOHgStiDqF9R/Se02v7rek4iAVLcQ9l5ttgf2nlL79Wy+8HvZX/mVQMCeg5YdaPgRZn+QXkOEzP6RAQGAEMTbkmzwG6itk52Gt4X6abic1HwkCgL5TeO3HkLy7bNGmXTdGPX6RMe+XliCCw2/7+1Y21/+CAEH64jfNSggFKyOfvH17QWHLAxE4cI2Hm2J71N1DxKtEayAlT0dfirZ8QfvEQNEWHuJqzjr9pk9hiNgxYLq7ylKbDvS1b8j1ciR4kfYCCiAwIIIAgiE4VygzBIoU5gG/9ySIUO2DuQjEP1r2n5VTwEIf9xXskV2zyABZCkziVrucFnvFcMNB8/qcUAM6nqPsI8ZxKACAdYfI6OfuE0SlOg9MpKPhHg4lcI3/sF2qb0yuXlM7q3nrRCRkOrxMi4Mal8FiIBEhPERJEaRHOMiFAJBEbA+dsS9GnyzBwbBT+eDpZ4fk7eO5x0JYhQT9CEfUzyunvP6V3CfAsGp63jfLwjGMLEttE1ILCzB5QIA+XeNQcQAONH4wD8EZmfhQbVFUB4ueujoZ1Fjm2rISbEMeyBOSiNqPlb+IH+jr4SSTj56kB2jFwtrcCIodTCZ4QEDUNwHzOINJjFWgWTv7LMIFsnOymofERxyJapD3iwoUEnTkqUYEtoOQU5UQvGHZ1ViEASkFCgFe7cOJpAuwaH6TKZBgiAuRgRvCwQk8nEqIQNEJPRhSiDiw/QCABQWR4iIJBBCgRXlTkTU84dNpCOuCu3BiApPJ8giKJT3wh9oG0JxgmMdAwItW84vuoVV2Cti+7BPRPzmQsKOg+emG+zMQMMldwKIDBzvisIhiifXv4wlwwMiAkYBDouA+fharMaslMVWwiTOgklQITEUfyDU9pvVMQtUUJ9BGZ+xgwW/c9kLb91582tHxxa0uy0KCReHM0BqnwuGLApnGNdOtK5+bPurH1tgjd+D3hRSi+cM7GmJ+IwScBACs8TUSkJ+K2HBbR9spuFDBTRrGyXPHXcKg6BQCl3bNI1K04VAxqfN4UtfunTV+r3mbwUAYIjMRAWc1f/T+w+ERYNTB++4+c8Xv3zSj1dITARjMouCQt4iojPMOiqQlJVjTHv8qS9Gl/RxpgGHYj3iawtVvUxicvpGdFQBUEUfIZSJGXvuPk/92xt+u7A94zqGHYkYv5kFUABFUAQEKPxn+qb/C4NjKrtmr0VjheAtT85rWxYfXtIjeO9RPfQpGwIAJOUlIH4HQUCo10kQIepw7j2xgM7BEBBD+NR7DWZLTaVn1RCACCam7cf3ffLy1/3OdbDbNURiCAwKxiQFI39Ty+iCH0ZAQkNgSHiKPrDy2WVzpqbKmCcEG+bsqYY3I0wCYUACSlf1J40BA0bAiKYEUVk9hiYMIA1VKogY92Ef8JZAJUr/1BwBCGViynx81YaLVj1RThpEsBQSRMEaLEBBcAAIQsQE4jizTyERBRChoYHOQTtsLR1RYq4iDeaPPnqQCBAoREEVe7HqcyMWiKxaeEu/nQOBlMN6IJNiHuR3JwsIIhCa6A0qybRgZsIkQNZAGxHKxHRxwar1F+27rpw2hoCwF22jhly25cTS8932JBZ2sCQLXEUjLCIIiwdKT41iJvsEAfyN60xMGLQbZRZRhkhJicXkcEXq2WPIqEJYVIwJsDACJS4k8ZUo/bLQ5HckbNqJmeKCVU9evP96bx0fkgTrWX5iLhnpnx5c/I3Ht39uujm3wW/aafN5r3lyUXuGu0adPQzpIgb3rTJrzPyLv2eJ9kMBYBAC1NRVMpxY0RDRO32Qftg3AaEELAOQ8GE4gIq0bKgQrbIsoUxM24+tWn/xfk+4GUNUzat7ETsAIx53167/8egCaHJBsnHKPvTcjretn3vLEY/s0prg5HH0WkgF8Qcrx0CG4UxS+DH2Q2vi2RugTJ34c9SPUk/ZplT4x3BuKh4U60Rq+t10sj626slL9nuinKZ4BKUXaPgvJ2ia7isPL/yPx7YfHi4HCrEELZI5Q93HNo+cvnqpKgoE4gGhJx8SEHHeA8SEwwM+iP9QP0ArEcGqRKRv2oRVslinZhIBmdTyINSkJ2u/c/6q9Zfs94SbsaY/hVO5UYPMXXPt49tT4RwjC4ggC84wtRrTtz8999GXh411LBU8o8M5Qn0jBxwYU/ZwuMOfEJPIlA4jSTjzqB8uhac+ESVG3sw0YSV49R4uBCCSienio6998lJ/slCQco0lx2wfb9KRJtg6ZZ6ZtGj8w2HK5IlgujTrxiwYqa4dgubmNe0HMXQLSChNpEAfD6NgBYqgEOpyhKjrRNo/82x6UVBAVX0i/gfsk2H6iF6ct2rDJ/df52YMYXgKqSckqCoh4abaDRgqQFjCkiGnuyTi0WYJXPEIGF6ACvblx0UiBCRKVUPIYAvjG2OlfkPKU+jN0C/eRmJEPxFGZq72O4mJIpKJaXvOXk9etu/vSu+VsQrX9NHEyil2TM1W5y07vsQdWygWuECY7tJuc6f2njclJfWwoTXiSeJuwugPBFDznCkuIQISkH5GgnT+wikMtaDk0vK6VhOOKpEP0HO+EMCQTEzZs/fe8KnXrXMzRFTL7EQk8QqKGZWUEYl06bzXblwxf3LLZIEghEIkY12LQp/ed3276DqhWXPjgM5CGSoRKMwAAj5BC5UhTqQGQuWkxz8qtBghCLB4Mlaq9VW/AXOpDOMGEuBII7DHk0QwMWnP3mvDpw9Y57qGCDV7Ej2OKjlkqJ1pM3G0qDl5618+dMSyF43IZNd2Hb5mdPzGQx8+bMkmniGDtWJZBSeE8g1ETjY8ecoB/EZnyB4wec+QjFipYQakcPeCEmuSKr+vg0nRNUQARDBkEAHYjU+Zj+wTrIMZv0s950WPakH5BcUwoThnlg9N3XjoQw9vHn5qsjWn6Ow9b7xpS+4aJI25cpaQFltQ3WMq2anEMC43qtoRAoAw57KPVOllVScXUTWA2fQTvu5tiMpuOTk5A2UXnIPGvA+vevozB6xzHZPZ+8rDUN/qV7x7SnuKEJwjBNh9dGz3+WPAAqUpS2tIqmE2yVLEEHWdqDqPD+VSretD5NGwUmdPOg5BQLYVKUENmiAqBF6h0RAppFaI1tDU1Ew5OTk8b+7r9331XiuXL951jyVrrz62uZpLG9JfDGkYhqoQqTKlFk1gX0qAUADQOZIyADvTp0yFIEBIILB1bKI5OEhIjl0ULEiWRwB6GyBCiPaioE4q1yMIoI0VJASs7EcdaPQdY7QaiBCRYxl7ccuur1x+4rsPf/thh6xcsQTQwJrr4Pk7uWODaSqeJcszUGoSFozXwn4lQKBEv/Qj8Dwjs2lamgPNN+675+3/83Muu0Mjw6VzGRRhyjv9WSSCSDdpWUrIEAAETDG6REenfBQjmS/9ck8RsNZMTk8XiOedfvLXPvexQ9944PztRgWp88C1fNV7RUoyVEUA9fIkqosiAmJ/YK30Sv3TfX+sPMK5+P92oHnLf3bLVQfv+5o1j6//3doNzYF23L7kb8A/GSLFxUtpSiB/okNBRCBV88jplUTUp7NwfdvWmvGxyWWLFt5+3ZcvPud980bndGemGcA9fKO9/qRGi0xhMxJEVfZLLgMznFNXBf1bkOtVv4fzZ0Ywsu7loV9tbOzzqiUi8uY/O+AnN339rA8dP7FlLHggYRaWXLmWigYsqFni3okRlTAlqxXaGFBlnlKB72CNmRib2H3XpXd+5ysHHbB3t9vlsls0W7L2R/jNdxsSsAayCi9V/qVHxSAK0WF1u1X5b/g9pVnHiIVc+diizrgccch+iDg90zGGrrjw9C996tzpsUkK6VeqwcRDAoK9d6QwmSnmLqluVVU0lUpBDAMhS53pzqL58279zy8vX7q42y2tQTJFueGneNURhielSNZJRddELPWt0KNODvqU3n7fV5exMVje8eT80+9auHiX7T//ybNbraZnUsqyfN2+rxkZGrz5lrtaAwOceCBUfLEu+aFUCVWkvDsk04Cz1jK81crya5//xCt22anTLa1BIOs2PoBXH2XKrWAtMPeoVTQU1NXHKGP8PeaQ2WhuRHSCjcHyzqdG33Pb8pmtE5ee88F5o3OdY3+ojbXdbnnG+4855t1Hjm/eYo1RJ0JA6w5Ddok6UUDykUFq6tZQdJYewaUlM/ny1hPf+7a/OOTAblkWBgGJtz4F17zdTL4gjQYIb/Nh6xEKKxKMvqXqWbAXAiB2GexA+b21Oxx1yx4vjrvPfubMY48+vNPpGkM5VTbEIv940Yd3XrJjZ7pDiDmpymxESlkDGiAkREJAU8xbkqV9ejWxXjFEwK5zI8OD1155ydyR4WB+Iv7eyXbtT2WgCc71QASo+pTe6lLtp9IvVPWN+siAdqD8+kOLTrhzBRIUDZo/Ou9Vu+6ycPvtHDOpGMnODQ0NtlqtG2++oznY5pioZtVGxfHEnEMEFJwN1cjgpzA6I4/2PX1lqDM2/o7D37xsyWLHTAhAhp9YTb+6AQYL4LJKJ/b6Pan+H3s2TpXsmmUr+jtnEdMq/+GBJSfftaKwQsSA5t+/9f2DDjvh2u/cYo1xjlUhi5j52Hf91YpXLZ+amiHEKrnlsWd2SjEXgwC+dHkZqwIzVGieRbAojj7q0FieEACQX16LpUhiuXLS0/uoOJsDVrWyarW2n3LMP7dpysfuW3bWPbsMNZkInaCADG03d6LsHve+c//tW9+31rjoDRHRMQ8NDvz14X/uJiYDEx6kaZQgSFXEHRI00kXXylmrPgshzsx0dt5p0b577Y6IRARkRBieeRBskIlqZZe/qEivUbAmjkui98r5xr5S8ZA8UVNOvecVn7x/56FmyQAcyk3oSmetbc0Z/sA5l91z/4PWGFY2EpHD3nKwbbccOwW/WCU3IQuKxQlhEeqJFpjqAhkTCCCim+msXLF0dM4wM3uCBVyJM5M+z6rG9UDnb1PggVWFFEazRlCAWM1yhIWIGCyeeNeKL/5y0XC7dFkBGN6Oma0x3U73zIu+MNPpRut7gRC+euWKJTstnJnp5LxegJkTSK2m9KG4ofBOqLNJBTkmGtS5nRbt4GtsdZlkjQMJNQPpx+/NHpiissLfoFQl1ixoyE0BvfuOlVc/vHCk5cosN+Sw+IgI4JwbnDty3/0P3nzbT7z3SadsZHhwxbIlrtOlUI2XCtgHTAxYujSl0yT1uw26Nb3cI4PtmgCgJjD1XJwyDVSTLOmHEivRSkKFV5RrACdoDG9xxdt+uPv1a7YbGSi7gpW6rwijRKUZ+ALIdd+/XTm4QPEsXbwQnItSd1Hqwij9kUTOCwLWczEd70k5pllBiSFlrkpWFZMaSXWL2XS0syNDARDHaK17rtM47Jbdb9swd3ig22XUiycAjCAsCeg5YTPQ+sVDa7aOTxhj9FacO2cIpOI/ACXXJ/J9SqoweshInpQMBeUczyorjdgHj0iF7uyLof2FehGN9NSpRVcHRKRksg23fqp56H/v/r/Pjgy3ypID/8aYhZxEaIkgtTWJFNZuemHTxo0v1G6MKHMDam2C9Kv3IWOymsMQp6DG6eEVNO8VmNVLqfUzhWoPQy8qU+Gs1rcgJVPRLH87NnjoTXv8atPQcKssGWslXI+Vp6ZmxscnmRkpb9qZTjk1M1Pb+Uofm1RWGNREocYiWodNOWAJZ9EIprJhpYWncsakUtjK+m7pDepZ6aHit/S4IdJLXTIW7fJXm4becvMev90yMNxyJde9GRIC4sTYxJ4rlr3p4P1ajcZUTCbCg/ftkIKED1NexyHBSkxqDFkElQ6wIALSsUm1XPQL1AhZbazEzSEsJPVOrKHN3vwjymeBYyza7p5nRw+9eY+nxgtvndwwkXc/TG0Zu/yjH7r/h9fc+Z1//vF3v7pi6U7ldBBFhMLM7IouyUdDk3aqRCiJGw5MYnzH8HAYROxJsSG9LkQfsZTI6FMjwIIZCip1PFYau/xuRgTHYAfLW5/c7q03rdxUFu0Gdx1qtZHXtxLA5MtbPnfJWeeeemKz2eh0u3vt8crzTjm+M91BJBIQqSASleiiqpz38xtZYCRUxSHp3KBuA2Dgfiq2bSh9VW1XsFq0oHympd5fJwClgB10310z/+23rpwSM2BFhCqZiwASIuDEy2Ofu+TsM953TLdb+ibY0rldluwERSHCjMgsZelqd4h9uiYEoNJQEhMA9EVCIFXwT9mIT/ZTK6E/pNsS9vYqAKUWxCuEWbUhMURDJ2Rb/M1Hdzj69lcyQLOB053SOWesiV4qBIGJzVuuuOTMM95/TFmWxhjPqFpjbrj5duh2EMnz0H0arSRtENYaK6yW6uLr0g5SZztBGY/6ArydrSqG6mChrsqrRAGT95FK4RQ1iwaOybbKf3lox2PvWF5YRHBjWyZ2XDB/eHBwfPNWTOJCpImXtn76ojPOev+x3WAdKJ0riuKr19zwlatvaM8ZKV3p39SxzA6xEOp0N/ZsaKB0lLyIEzLKm2UFap0BSqmphdsS6PGoV8UoVoLeTRRPVrv8wgM7//2PdhloEAq3mu1rr7zk57d/8+e3Xnva37938uUxYwwSTmze+qkLP3z2h07odkvPEJbOFdb+6zf+630f+aRtNZXKn3tjQta+S2708B5dVHmUmT0ysfrgEQFLLAFkRWoWP9RAVEJqWG8eBVWNwNjsjX1uF0Ndqmi7y3625PyfLhlosbFm64tj511w8jHvOgxEtps35/OXnjU8OHDpFf8MZC6/8LRzTjm+LEtPG5alKwr79W99/+/OvLg9NIgE7IJkGRlZ+vZsiS8ah/9FaAyUcpVEhqmuZ/TKTGWELBVlqlIU6nLMMOsB1CMCuC9hyAIiYtp8/r3LL/vZTkPt0gE4ESjM61e9utstAYSIROCS8z4wMz3VHhg895QTu2XcO6UrCnv1dTf97Ycvbg8OAiIzJ02voAbA/WO9Z3ZSIUxA6+UQMYo4U7tLLu+FbKpS9e7FLrGRUWZpMJVqFqKZQ7+xhJpwyupXfOmXi4dbpQsttQgl3/fAb970hv07nS4RiQgzf+aiMxOhEU5WYa+5/r9POv3C5sAAInEgevJtbKsxwheTQ6evqJb/dLtJxKmyNoqbJsI8jFRNT7YqIsZKY0Dp2KQv/qsyZBK784mMcCEn3rXiSw/uONzudqOZnePW8OAVX7rmJ/f8rNEoytL5EOCYHYdW6LJ0hbXf/O4PTzz1wma7TYQsTomjgUXaRRG4c72rUy4W5wworCRVDgx8C3AQpmHYk0o8llmP8PwTUzP57LBDJFmwHDhRMfWaRE/akayDxnAH6T137Hb1w4tGBkKSldQLZM341NRRx3949b0PFIUtnfM7i5J1Cvut/7rt+A9d0Gi3iAxzFBtAaJLodsuFO8xfuvPCmiij7LrYFOP5VIWxPDtWScCRgvo9wuzEUAuKT+/Je2wWMPT08y/WRSC7Hgb15vgaIKy7dRY0lifQvPPWldf/druRgW43tDaqVWRutFsTne6Rx552909/UVhbliFye+tcd+Mdx3/wgqLVIkIWhjxoAkSYyLipmQNX7TlnZLh0TqEteO7Fl4LsF6OqDBmUDjPnaoL5iEWsE8nY6Nti8BYWoUbjt2ufGJ+YMoZ8FxqI0MqjePul0O1Av9EZvV7JMRrLL7vGUT/Y7eYnRkcGyi5jLlKpbMuVrtkqxmdm3nb8mavve7AoCn8WisJ+5+Y7jnn/+aZREBFz6mXG9LssgIZOes9R2isQkWNe87sNYAsOEIUrUxTqJRnxerLQIBx7M5P6GUSxaCzcbDaf2PDMw4+tldR8wA5bc/iQi7krQDm3CjJVnxEoEzkB2+DnOs233vyqOzfMGW6XXQ67WqpETKS8udlsb52aPvK4M2689W4idKW76rqbj/ngBaZhjTXZfagAXdhicvOWow5745sO3s8xezTAIkT49MYXHlu7vtloSP5Fqi1kanX1rK9VlBXmaSC6C0xCg4I1ODUxedPtq/d/7Z7hXcgAO7PPcbz+x3jPVTDcAldCgp3V1N0x2ka5Yap95A92e3DTYLJOlC6F2RJZWIIAiM75fTT99pPP2mfP3Trd7q8febzZbBqD7DjfctiFUBR2bHx85yU7fuGSj2g+ipmJ6O57H3jphc1Do8O+IkSAXOnZ6WUIg6C1EpGVWhXFAypAQHTCZqB93Y13jE9MkYn6bURkpiO+4l77ThmfRgIg01v/Khlts1wzNviWm/Z48MXB4VbZzbVP3XBSbYcRQARmLqxttpo//9Ujv3507cCAj1l55gL5qxJZa8de2rLjdvO+d/VnlyzegZlTH4ff3t/+3g/BIFQCqlQ6BCTn8f5FpjG6NO5oSRrYVP/ByB75c9doNp7d8MzOOy3cf589Sucoqp6RDOz5LoEurL+HOiUaAGMBCZAAkcHYZvfXLw299Qd7PL61Ndx0XSFAMEjGEBIZIqI4HoCQiAwZIiRCJDTk/6RWq9FsNHyxj4gIDRlADLnY9PhUZ2LqzW884Iavf3bPla8onUsFQsdsjbnvF7+54LIri1B61odfTSBBSjLOkLu3lx+sRj2lvm4KpGtdK0jdbneHeXN/fts3F8wf9fs2VvQQEHn9/8jqK+h3d+DUpF8GZqAC7p+Y+7ZbXvXsVDHY4JLDE06MT8FMR7WS1AamcLX1I4ZhLfgXAhCwZrs5I/vuvdsJ7zny6KP+wtsrWUcA2LG15q1/c+oP7lg9NGekTFVpjJRplIt5HCHZDwG2lx8UnRzGvgNdsYs1MxHvc4lwfPOWo9/xV9/+6uVlWVL2zQLCQFYAZNOjsG41vPAbnnzJNNov4vYHnH/Pus1uqOW6Do0h53hmfGL/ffc+7E0H7rjD/Kp2EWdDm/XBGYgAYI1duMP8la9Yumzp4tA+w6I7pMqyLIri69/6/smnfnxwdA47NSoKNY+BsY4FwtFeCFYdNxE1kiQvaBwj441dOjc0Oue6G36w267LPnHW3ykbIaABdgiA81fC/JUR7MPkpulxPqpltzq2RWGmJqcN4j9dds4HT/prVWP4Y7+YmZmNMdo63bJsFMX/PfjQ6Rf8Q2toOJZ7JVO2sfQtGdlKrEYgAFjJebfUVw29UEiiND9sPcc8MDrnwiu+0mo1z/nQ8SLiXIimAQ2xgzgoBojM9EsG2Qm2bDH28padFm1/9RcvfvMb9mPmblnin8A4wX0ZY/TtO+ZGUfzm0bXvOPHsyZlOs91kf7gy9YKK3tPdqnEGAIoNBabaAAUQII+3IPmz1P7q32tgZPDci/5xw1Mbr7jwjHar6ZwTkbCbknTc40kkEbGmGNu0+cDX7f2NL1/qtXvGGKse6U/15U1TWEtEt/743hNO+fjzL21pD7Sdly9Val9Zl4RAfo4gIjFz4ieotyRSra/GmV+xWUv87BIBERgYHbnya98+6IiTb/3RT40x1lqfedfX1xCSndq06fi/OfL267+8fOnisiytNZqB/CO/mMU5Lp1zzERUWPvylrGPXnblkceesWnL1vZAy7lSg4+sTZTEF6oxLbrZtbX8oCR5J6SILzBNgOiZywP5wUCssePjkwbpL/9s/+OOPvyQN+y/YLu5anqhENH6Dc/sdch7PnLK8eefdhIAuIAPcgD+0+6gjc9t+s8bb7/yquvXPLauPXcYCZh9WlBpvfQ0U+xk8ayQhC4EJcbFlo9isSYqUtFOoe79qI7fSzUuIhSQqa3jYOwOw8PnnHbCGR84zlvBG2jjsy/85pHH33LIgR776pFjRDQ2PtHplsENKEep2/Uk9TDrrqAwPFJYZHx8cuNzmx5Zs+7uex+4+95fPPvM89RqDgy0nXM5DEvQiscpazGgB5LAD6OUms7N9oKlSjdRtf+rInxKvdbMADA0Z4SMee6ZZ9c8sQE0shJZtHDBooULNDZhZjKEgP/y7zdc/oWrugh5XlbWv7AgomRdheTGlCR6Z09LdjqdickpmS6B0A60BufNEeayLMP0OV1UqHS+VRuSo5k0fW2VKyeli5ZEQUs/aU9ageTovCYQG41mo9ETgEWEk3U8xz41NX3q+Z/92jXfMe02kla4KbQTVrquM8OqTM0/fHugTYPoi4XOS6sQI22IahpmGGzRV4Hr+8tiIikCYAl1opY1eFKtMQpIbfZLhfqR3FMsPTppxJyvOHaFtY+uWXfiKZ+49/5fDi6YKy6xwKJDiyhitD6oSHexYejwYeYSIqkusXxcn8xCPQJ2iGMTsrJNPRdTVYur3kuqTT6z6ntCzyMqKcgsQE4AoLD2hpvvfMORf3vvgw8Nzx91pWMWAQZmYeEwT0PYC1lZtY/ELn3/TX3DonpKVEdPf1VNzTpZptOH26tWNXS5ubcxUML4P7W+kegOfEVenT4Wcs5Za1nko5d+8fIvXl20GoMjQ11XhlICqFm4CAgkYT6baKchoCYfSHL2kUlGyH63T1QRlSNUKxVVsjjUEmKYsPoExsaz2PiZKlpheK2QH+vjw6FEFUg8uelOalDIO52nNz5/0ukX33bb6oH5cwHYlU5XvPOc4j5t74FpR33+UrNrbg/0ztiLOhCoJkTKbFecURGG4sVBVJX+uDQyLzCKLHHCpeTmHrVXRQ2j9BNfSA1tTQb01A8jIrNIzI8Ka++4+77XH37ibT/636EF85hFWLDWLaZHDoIQVlo4qgN2OE+/jXyDr40GY/ppNJzcYm6u9uWjpEAkSv1x3DttIjCKMarlcZ1J44TbbNPCXrkziGk3V9//YLcsG40CQMAYAPjMldd+7PIvOsKh0RHPvafaC/bp8EljIlSjgKQAlJBqVr1lRWa1ZKB0xhgJmST/gRjRwwRIjkSGeDIg7m5jfcchAAKp+RCQBj5WG/6w2q5T94RFYZ965tm1Tzy99x6vbBSNR9asO+2Cz37hymsaQwNFUTh2Sp2kpxhIbSZumqGq9RZYK16nAw5qQGSoz6gRd0mukswaEADkcYmVaQuSLCCaDwpkkQarFTWNIhtFtFZGt1KBCBBOjk/MnTtnwXbznt747OTE9NDIsGOOjUCIs5Sx9RR9vbMCrZA4IQ7UX3B2GKR4WqebrFPrttWYXCE5SN4iNUjHxZCQakQCBKWmm0fUAo+oQ4voA+rw2//FGJrpdLqlazSKwliuICOs+s6+xVgQ4ChQSksmvh05Tg1Ug9Yipo+clqiR5cnFxBETqiaB2TlwyrS0RJuZraLSgsA91vwqQE+NtZfZRt1FdhSdY2usNVZAnGOsT+Xc1gjuvJ4VKbFqVEbkytCiSqcQxulJuQ4AAkg+bwvNYuoTINQewupy+3fzA7eDJlv6TsamLEylWZpHUY2JyRCKQ3NxIFVYHEgaZN07hbuCvcJ42hAaJaU9Ycxqdc4uzCqtEBHGOMgJo8IluGTMM+zSLDrRZAYAANsoNKol7n303oj9xM1xuo5gvfktThaO9HqliihV/Ia948ByPJPadIjqiCDQNf1U8ZXUZh2ikpAAC+fpSikv80UOwaR1RWYOYAqFqCaklNQSrJ2cRK+fpGOVigOmoe66MTUrgWUbUxWqTXehCUmNMSIiVbzypQM98TDcdr6r8JEQScCDGMrT4qf8I2EOFYioJ0AgYq2CSFJpxQwmCD1RarysPqVS0YSmjwTwn1bBkaqvzVFGvfErmZTqDJcsC6j2A0TgGCpxgtH7iuTekxDURFRIqw71kbgDKMmbAYiCNLzmSv2+Tx8bQao2FkNlBYKLVmumeZBq0IpUP6JB5z7aAZuk0db5UM6v+kx5wnzZ7Lc5qEJzpRuqkzRrzVph0oLMNsQ7ji9TsAjBk/aeoRc/rwRR9af1CTeVqJ+SOGZBCc3oGZv19qaqRl6sCWVSsoppKIE3BFFt3mfQUopqgte9igjIfoZSHB2RjCs5J8pklmr/9YJJCaNbUAJhFqvS4Xz5D4Dg2gediPrkH09NQirgShyM6q3v9Ta5WBQm8kdXWNvO1a7iPMQ44mBR42s01NZAT+FAABH/ORmS0IiqDlTBZ/T8SmTGcYkDorHBn3PUlOlp8Tn4S0LmEvXhWhOi5uaTJEsIKCW0cmlZK1qN9Kr7MnJoiWfNcbTidWL6kXJ0RI46xygVB2QWxMrGyb14SQyMVU2lnh8Eaow9Zk4esPp5PVmmHtlvTLLQsFpRt4dZSK4+cifz7YAIQaJTMZOIZ1TyBHFUDG8E1DqL9hdk0J+FJLoKCHnxquxi70ywOK4nHgQAEfh/uiZ9laArodcAAAAASUVORK5CYII=" alt="" width="36" height="36">Vendeuzap</a>
+    <nav aria-label="Seções">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#relatorio">Relatório</a>
+      <a href="#perguntas">Perguntas</a>
+      <a class="btn btn-primary" data-cta href="#contato">Quero conhecer</a>
+    </nav>
+  </div>
+</header>
+
+<main id="inicio">
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow" style="color:var(--orange)">Rastreamento de vendas no WhatsApp</p>
+        <h1 style="margin-top:16px">Descubra quais anúncios <em>vendem</em> no seu WhatsApp.</h1>
+        <p class="lede">O Vendeuzap identifica de onde veio cada conversa, reconhece quando a venda acontece e envia a compra, com o valor, para a Meta e o Google. Suas campanhas passam a aprender com quem compra de verdade.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" data-cta href="#contato">Quero ver funcionando →</a>
+          <a class="btn btn-ghost" href="#como-funciona">Como funciona</a>
+        </div>
+        <p class="hero-note">Funciona com o WhatsApp que a sua equipe já usa. Sem trocar de número.</p>
+      </div>
+
+      <div class="chat" role="img" aria-label="Exemplo de conversa: um lead chega por um anúncio, a equipe confirma o pagamento de R$ 389,90 e o Vendeuzap envia a compra para a Meta.">
+        <div class="chat-head"><span class="av">AS</span><div>Ana Souza<small>chegou por anúncio · agora</small></div></div>
+        <div class="msg in m1"><span class="ad">Anúncio: Óculos de grau 30% OFF</span>Oi! Vi o anúncio dos óculos, ainda está valendo?</div>
+        <div class="msg out m2">Está sim, Ana! Com as lentes que você escolheu, o total fica <b>R$ 389,90</b>.<time>10:42</time></div>
+        <div class="msg in m3">Fechado, já fiz o Pix 😊</div>
+        <div class="msg out m4"><b>Pagamento confirmado!</b> Obrigado pela compra.<time>10:51</time></div>
+        <div class="receipt" aria-hidden="true">
+          <div class="row"><span>evento</span><b>Compra</b></div>
+          <div class="row"><span>valor</span><span>R$ 389,90</span></div>
+          <div class="row"><span>origem</span><span>Anúncio no WhatsApp</span></div>
+          <div class="sent"><span class="tag">✓ Meta</span><span class="tag">✓ Google Analytics</span><span class="tag na">– Google Ads</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="problema">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">O problema</p>
+        <h2>O anúncio leva para o WhatsApp. A venda some no caminho.</h2>
+        <p class="lede">Quando o cliente fecha pelo WhatsApp, a Meta e o Google só enxergam que alguém iniciou uma conversa. O que aconteceu depois fica fora da conta.</p>
+      </div>
+      <div class="pains">
+        <div class="pain"><h3>O relatório para na conversa</h3><p>O Gerenciador de Anúncios mostra conversas iniciadas. Quantas viraram venda, e de quanto, ninguém sabe ao certo.</p></div>
+        <div class="pain"><h3>A campanha otimiza para curiosos</h3><p>Sem receber as compras, o algoritmo procura mais pessoas que conversam, não necessariamente mais pessoas que compram.</p></div>
+        <div class="pain"><h3>O investimento fica difícil de defender</h3><p>Sem ligar cada venda a um anúncio, a decisão de onde colocar a verba vira palpite.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="como-funciona">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Como funciona</p>
+        <h2>Três passos, sem mudar a rotina da equipe.</h2>
+      </div>
+      <ol class="steps">
+        <li class="step"><h3>Conecte o WhatsApp</h3><p>Leia um QR Code ou digite um código no celular. O número continua o mesmo e a equipe atende como sempre.</p></li>
+        <li class="step"><h3>Saiba de onde veio cada conversa</h3><p>O Vendeuzap reconhece a origem da primeira mensagem:</p>
+          <ul><li>anúncio de clique para o WhatsApp da Meta</li><li>botão de WhatsApp do site</li><li>links rastreáveis para bio, QR codes e Google</li></ul></li>
+        <li class="step"><h3>A venda vai para as plataformas</h3><p>A compra é registrada quando a equipe envia a mensagem de confirmação, marca a etiqueta "Venda" ou clica em registrar venda. O Vendeuzap envia o evento com o valor para a Meta e o Google.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="relatorio">
+    <div class="wrap report">
+      <div>
+        <p class="eyebrow">O que você passa a ver</p>
+        <h2 style="margin-top:14px">Faturamento por anúncio, não só por clique.</h2>
+        <ul class="checks">
+          <li><span><b>Vendas e faturamento por origem.</b> Anúncio no WhatsApp, site, link rastreável ou sem origem identificada.</span></li>
+          <li><span><b>Campanhas e anúncios que mais venderam,</b> com quantas conversas cada um gerou.</span></li>
+          <li><span><b>Funil da conversa até a compra,</b> com a taxa de conversão de verdade.</span></li>
+          <li><span><b>Um link de relatório para o dono do negócio,</b> que abre no celular e não pede login.</span></li>
+        </ul>
+      </div>
+      <div class="report-card" aria-label="Exemplo de relatório com dados fictícios">
+        <div class="label"><h3>Ótica · últimos 30 dias</h3><span class="pill">Exemplo fictício</span></div>
+        <div class="kpis">
+          <div class="kpi"><span>Conversas</span><b>18</b></div>
+          <div class="kpi"><span>Vendas</span><b>11</b></div>
+          <div class="kpi"><span>Faturamento</span><b>R$ 6.938</b></div>
+        </div>
+        <div class="bars">
+          <div class="bar"><span>Link rastreável</span><b>R$ 4.088,70</b><div class="track"><div class="fill" style="width:100%"></div></div></div>
+          <div class="bar"><span>Anúncio no WhatsApp</span><b>R$ 1.559,70</b><div class="track"><div class="fill" style="width:38%"></div></div></div>
+          <div class="bar"><span>Sem origem</span><b>R$ 1.290,00</b><div class="track"><div class="fill" style="width:32%"></div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="destinos">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Para onde as vendas vão</p>
+        <h2>Cada venda chega às ferramentas que você já usa.</h2>
+        <p class="lede">Os eventos saem do servidor, sem depender de cookie no celular do cliente.</p>
+      </div>
+      <div class="dest">
+        <div><b>Meta</b><span>API de Conversões, com os eventos</span><code>Lead · Purchase</code></div>
+        <div><b>Google Analytics 4</b><span>Measurement Protocol, com os eventos</span><code>generate_lead · purchase</code></div>
+        <div><b>Google Ads</b><span>Conversões offline de quem clicou no anúncio</span><code>importação diária</code></div>
+        <div><b>Seu sistema</b><span>API para registrar vendas vindas do CRM, checkout ou n8n</span><code>POST /api/v1/sales</code></div>
+      </div>
+      <div class="who" aria-label="Para quem é">
+        <span>Clínicas</span><span>Óticas</span><span>Imobiliárias</span><span>Lojas e e-commerces</span><span>Prestadores de serviço</span><span>Agências de tráfego</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="privacy" id="privacidade">
+    <div class="wrap">
+      <div class="head"><p class="eyebrow">Privacidade</p><h2>Feito para respeitar os dados dos seus clientes.</h2></div>
+      <div class="grid">
+        <div><h3>As mensagens não ficam guardadas</h3><p>O Vendeuzap lê a conversa para identificar origem e venda, e guarda só o necessário: contadores, valor e origem.</p></div>
+        <div><h3>Telefone criptografado</h3><p>O número do comprador vai para a Meta e o Google apenas em formato de hash, como as próprias plataformas exigem.</p></div>
+        <div><h3>Acessos protegidos</h3><p>Os tokens de cada cliente ficam criptografados no banco de dados. O relatório do cliente é um link privado, só de leitura.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="perguntas">
+    <div class="wrap faq">
+      <div class="head"><p class="eyebrow">Perguntas frequentes</p><h2>Antes de começar</h2></div>
+      <details><summary>Preciso trocar de número ou de aparelho?</summary><p>Não. O WhatsApp é conectado como um aparelho a mais, igual ao WhatsApp Web. A equipe continua atendendo no mesmo número.</p></details>
+      <details><summary>Funciona com o WhatsApp Business?</summary><p>Sim. Com o app WhatsApp Business também é possível usar as etiquetas: marcar a conversa como "Venda" já registra a compra.</p></details>
+      <details><summary>Como o Vendeuzap sabe que a venda aconteceu?</summary><p>De três formas, à sua escolha: quando a equipe envia uma frase de confirmação combinada (como "pagamento confirmado"), quando coloca a etiqueta de venda na conversa, ou quando alguém clica em registrar venda no painel. Vendas fechadas em outro sistema podem entrar pela API.</p></details>
+      <details><summary>E se o cliente comprar dias depois da primeira conversa?</summary><p>A venda fica ligada à conversa original. Quando ela for confirmada, o evento vai para as plataformas com a origem do primeiro contato.</p></details>
+      <details><summary>Funciona com a API oficial do WhatsApp?</summary><p>Hoje o Vendeuzap conecta números pelo WhatsApp Manager. Para números na API oficial, fale com a gente para avaliar o caso.</p></details>
+      <details><summary>A Meta passa a atribuir todas as vendas aos anúncios?</summary><p>A Meta recebe cada venda com o telefone do comprador e os dados do clique, quando existem, e faz a correspondência com quem viu ou clicou nos anúncios. A taxa de correspondência varia por conta e aparece no Gerenciador de Eventos.</p></details>
+    </div>
+  </section>
+
+  <section class="final" id="contato">
+    <div class="wrap">
+      <p class="eyebrow" style="color:var(--orange)">Vendeuzap</p>
+      <h2>Veja quais anúncios fecham venda no seu WhatsApp.</h2>
+      <p>Mostramos o Vendeuzap funcionando com o seu caso e configuramos a primeira conexão junto com você.</p>
+      <a class="btn btn-primary" data-cta href="#contato">Falar com a gente no WhatsApp →</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap"><span>Vendeuzap é um produto da DIV Agência.</span><span>vendeuzap.divagencia.com</span></div>
+</footer>
+
+<script>
+  // Troque pelo link do WhatsApp comercial (de preferência um link rastreável do próprio Vendeuzap).
+  var CONTATO = '';
+  if (CONTATO) document.querySelectorAll('[data-cta]').forEach(function (a) { a.href = CONTATO; a.target = '_blank'; a.rel = 'noopener'; });
+</script>
