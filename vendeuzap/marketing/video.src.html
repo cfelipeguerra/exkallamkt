@@ -6,7 +6,7 @@
 --display:"Bricolage Grotesque",system-ui,sans-serif;--body:"Figtree",system-ui,sans-serif;--mono:"IBM Plex Mono",monospace}
 *{box-sizing:border-box;margin:0}
 html,body{width:1080px;height:1920px;overflow:hidden;background:var(--navy);color:var(--white);font-family:var(--body)}
-.stage{position:relative;width:1080px;height:1920px;background:
+.stage{position:relative;width:1080px;height:1920px;animation:out .6s 11.4s ease forwards;background:
  radial-gradient(900px 700px at 80% 10%,rgba(254,126,1,.16),transparent 60%),
  radial-gradient(800px 800px at 10% 95%,rgba(255,255,255,.06),transparent 60%),var(--navy)}
 .brand{position:absolute;top:90px;left:80px;display:flex;align-items:center;gap:20px;font:800 48px var(--display);animation:fade .6s ease both}
@@ -47,6 +47,7 @@ html,body{width:1080px;height:1920px;overflow:hidden;background:var(--navy);colo
 .end p{font:600 38px var(--body);color:var(--soft);animation:up .6s 12.1s ease both}
 .end .url{font:500 34px var(--mono);color:var(--orange);animation:up .6s 12.4s ease both}
 @keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes out{to{opacity:0}}
 @keyframes up{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
 @keyframes pop{from{opacity:0;transform:translateY(20px) scale(.96)}to{opacity:1;transform:none}}
 @keyframes gone{to{opacity:0;height:0;padding:0;margin:0}}
@@ -64,17 +65,11 @@ html,body{width:1080px;height:1920px;overflow:hidden;background:var(--navy);colo
     <div class="msg in m3">Fechado, já fiz o Pix 😊</div>
     <div class="msg out m4"><b>Pagamento confirmado!</b> Obrigado pela compra.<span class="t">10:51</span></div>
   </div>
-  <div class="detect"><span class="check">✓</span><div><b>Venda identificada</b><span>R$ 389,90 · Anúncio no WhatsApp</span></div></div>
+  <div class="detect"><span class="check"><svg viewBox="0 0 24 24" width="56%" height="56%" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><div><b>Venda identificada</b><span>R$ 389,90 · Anúncio no WhatsApp</span></div></div>
   <span class="flow f1"></span><span class="flow f2"></span>
   <div class="dest">
     <div class="card c1"><b>Meta</b><code>Compra · R$ 389,90</code><span class="ok">✓ enviado</span></div>
     <div class="card c2"><b>Google Analytics</b><code>purchase · R$ 389,90</code><span class="ok">✓ enviado</span></div>
-  </div>
-  <div class="end">
-    <img src="data:image/png;base64,__LOGO__" alt="">
-    <h1>Descubra quais anúncios <em>vendem</em> no seu WhatsApp.</h1>
-    <p>Cada venda enviada para a Meta e o Google, com o valor.</p>
-    <span class="url">vendeuzap.divagencia.com</span>
   </div>
 </div>
 </body></html>

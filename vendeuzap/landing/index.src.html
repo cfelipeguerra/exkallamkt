@@ -12,7 +12,7 @@
   --orange:#fe7e01; --orange-ink:#08213d; --orange-soft:#fff1e3; --orange-strong:#b45309;
   --bg:#f4f6fa; --surface:#ffffff; --surface-2:#eaeef5; --fg:#08213d; --muted:#55657c; --line:#dce3ee;
   --ok:#15803d; --ok-soft:#e3f5e9;
-  --bubble-in:#ffffff; --bubble-out:#ffe8d1;
+  
   --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --body:"Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -22,12 +22,12 @@
   --navy:#061629; --navy-2:#0b2240; --on-navy-soft:#a9b8cc;
   --orange:#ff8a1a; --orange-soft:#3a2310; --orange-strong:#ffb066;
   --bg:#0a1a2f; --surface:#0f2440; --surface-2:#163056; --fg:#eef2f8; --muted:#a3b2c7; --line:#1f3a60;
-  --ok:#4ade80; --ok-soft:#12321f; --bubble-in:#16304f; --bubble-out:#4a2d12; color-scheme:dark }}
+  --ok:#4ade80; --ok-soft:#12321f; color-scheme:dark }}
 :root[data-theme="dark"]{
   --navy:#061629; --navy-2:#0b2240; --on-navy-soft:#a9b8cc;
   --orange:#ff8a1a; --orange-soft:#3a2310; --orange-strong:#ffb066;
   --bg:#0a1a2f; --surface:#0f2440; --surface-2:#163056; --fg:#eef2f8; --muted:#a3b2c7; --line:#1f3a60;
-  --ok:#4ade80; --ok-soft:#12321f; --bubble-in:#16304f; --bubble-out:#4a2d12; color-scheme:dark }
+  --ok:#4ade80; --ok-soft:#12321f; color-scheme:dark }
 
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
@@ -61,38 +61,16 @@ p{margin:0}
 
 /* Hero */
 .hero{background:var(--navy);color:var(--on-navy);overflow:hidden}
-.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding-block:72px 84px}
+.hero .wrap{display:grid;grid-template-columns:1fr;gap:44px;padding-block:72px 84px}
+.hero-text{max-width:860px}
+.demo{margin:0;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 70px rgba(0,0,0,.35);aspect-ratio:16/9;max-width:100%;background:var(--navy)}
+.demo video{display:block;width:100%;height:100%;object-fit:cover}
 .hero h1{font-size:clamp(38px,6vw,68px);font-weight:800}
 .hero h1 em{font-style:normal;color:var(--orange)}
 .hero .lede{color:var(--on-navy-soft);margin-top:20px;font-size:19px}
 .hero-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
 .hero-note{margin-top:18px;font-size:14px;color:var(--on-navy-soft)}
-@media (max-width:900px){.hero .wrap{grid-template-columns:1fr;padding-block:48px 56px}}
-
-/* Conversa */
-.chat{background:#e9eef4;border-radius:22px;padding:18px;color:#08213d;box-shadow:0 30px 60px rgba(0,0,0,.35);max-width:440px;justify-self:end;width:100%}
-:root[data-theme="dark"] .chat{background:#13294a;color:#eef2f8}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chat{background:#13294a;color:#eef2f8}}
-.chat-head{display:flex;align-items:center;gap:10px;padding:2px 4px 14px;border-bottom:1px solid rgba(8,33,61,.12);margin-bottom:14px;font-weight:700;font-size:14px}
-.chat-head .av{width:30px;height:30px;border-radius:50%;background:var(--orange);display:grid;place-items:center;color:var(--orange-ink);font-size:13px;font-weight:800}
-.chat-head small{display:block;font-weight:500;color:var(--muted);font-size:12px}
-.msg{max-width:84%;padding:10px 12px;border-radius:12px;font-size:14.5px;line-height:1.45;margin-bottom:8px;box-shadow:0 1px 1px rgba(8,33,61,.08);animation:pop .5s ease both}
-.msg.in{background:var(--bubble-in);border-top-left-radius:4px}
-.msg.out{background:var(--bubble-out);margin-left:auto;border-top-right-radius:4px}
-.msg .ad{display:block;font-size:12px;color:var(--muted);border-left:3px solid var(--orange);padding-left:8px;margin-bottom:6px}
-.msg code{font:500 12.5px var(--mono);background:rgba(254,126,1,.16);padding:1px 5px;border-radius:5px}
-.msg time{display:block;text-align:right;font-size:11px;color:var(--muted);margin-top:2px}
-.receipt{margin-top:14px;background:var(--navy);color:var(--on-navy);border-radius:12px;padding:14px 16px;font:400 13px/1.7 var(--mono);animation:pop .5s ease both;animation-delay:1.6s}
-.receipt b{font-weight:500;color:var(--orange)}
-.receipt .row{display:flex;justify-content:space-between;gap:12px}
-.receipt .row span:first-child{color:var(--on-navy-soft)}
-.receipt .sent{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.2)}
-.tag{font:500 12px var(--mono);padding:3px 8px;border-radius:99px;background:rgba(74,222,128,.16);color:#86efac}
-.tag.na{background:rgba(255,255,255,.08);color:var(--on-navy-soft)}
-.m1{animation-delay:.2s}.m2{animation-delay:.6s}.m3{animation-delay:1s}.m4{animation-delay:1.3s}
-@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.msg,.receipt{animation:none}}
-@media (max-width:900px){.chat{justify-self:stretch;max-width:none}}
+@media (max-width:900px){.hero .wrap{padding-block:48px 56px;gap:32px}.demo{border-radius:16px}}
 
 /* Seções */
 section{padding-block:88px}
@@ -221,7 +199,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
 <main id="inicio">
   <div class="hero">
     <div class="wrap">
-      <div>
+      <div class="hero-text">
         <p class="eyebrow" style="color:var(--orange)">Rastreamento de vendas no WhatsApp</p>
         <h1 style="margin-top:16px">Descubra quais anúncios <em>vendem</em> no seu WhatsApp.</h1>
         <p class="lede">O Vendeuzap identifica de onde veio cada conversa, reconhece quando a venda acontece e envia a compra, com o valor, para a Meta e o Google. Suas campanhas passam a aprender com quem compra de verdade.</p>
@@ -232,19 +210,10 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
         <p class="hero-note">Funciona com o WhatsApp que a sua equipe já usa. Sem trocar de número.</p>
       </div>
 
-      <div class="chat" role="img" aria-label="Exemplo de conversa: um lead chega por um anúncio, a equipe confirma o pagamento de R$ 389,90 e o Vendeuzap envia a compra para a Meta.">
-        <div class="chat-head"><span class="av">AS</span><div>Ana Souza<small>chegou por anúncio · agora</small></div></div>
-        <div class="msg in m1"><span class="ad">Anúncio: Óculos de grau 30% OFF</span>Oi! Vi o anúncio dos óculos, ainda está valendo?</div>
-        <div class="msg out m2">Está sim, Ana! Com as lentes que você escolheu, o total fica <b>R$ 389,90</b>.<time>10:42</time></div>
-        <div class="msg in m3">Fechado, já fiz o Pix 😊</div>
-        <div class="msg out m4"><b>Pagamento confirmado!</b> Obrigado pela compra.<time>10:51</time></div>
-        <div class="receipt" aria-hidden="true">
-          <div class="row"><span>evento</span><b>Compra</b></div>
-          <div class="row"><span>valor</span><span>R$ 389,90</span></div>
-          <div class="row"><span>origem</span><span>Anúncio no WhatsApp</span></div>
-          <div class="sent"><span class="tag">✓ Meta</span><span class="tag">✓ Google Analytics</span><span class="tag na">– Google Ads</span></div>
-        </div>
-      </div>
+      <figure class="demo">
+        <video id="demo-video" src="demo.mp4" poster="demo-poster.jpg" autoplay muted loop playsinline preload="auto"
+          aria-label="Demonstração: uma cliente chega por um anúncio, a loja confirma o pagamento de R$ 389,90 e o Vendeuzap envia a venda para a Meta e o Google Analytics."></video>
+      </figure>
     </div>
   </div>
 
@@ -412,10 +381,17 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
 </main>
 
 <footer>
-  <div class="wrap"><span>Vendeuzap é um produto da DIV Agência.</span><span>vendeuzap.divagencia.com</span></div>
+  <div class="wrap"><span>Vendeuzap é um produto da DIV Agência.</span><span>www.vendeuzap.com.br</span></div>
 </footer>
 
 <script>
+  // Quem prefere menos movimento vê o vídeo parado, com controles para tocar quando quiser
+  (function () {
+    var v = document.getElementById('demo-video');
+    try {
+      if (v && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { v.removeAttribute('autoplay'); v.pause(); v.controls = true; }
+    } catch (e) {}
+  })();
   // Cobrança anual: 10 meses pelo preço de 12 (2 meses grátis)
   (function () {
     var btns = document.querySelectorAll('[data-bill]');
