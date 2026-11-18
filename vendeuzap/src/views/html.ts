@@ -238,6 +238,24 @@ pre{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--s
 .platforms{display:flex;gap:6px;flex-wrap:wrap}
 .tech{margin-top:6px}
 .tech summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+.help-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:28px;align-items:start}
+.help-toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 84px);display:grid;gap:2px;font-size:14px}
+.help-toc a{padding:7px 10px;border-radius:8px;text-decoration:none;color:var(--muted)}
+.help-toc a:hover{background:var(--surface-2);color:var(--text)}
+.help-toc a.sub{padding-left:22px;font-size:13px}
+.md{max-width:760px;font-size:15.5px;line-height:1.65}
+.md h1{font-size:26px;margin:0 0 10px}
+.md h2{font-size:22px;margin:38px 0 10px;padding-top:22px;border-top:1px solid var(--line);scroll-margin-top:90px}
+.md h3{font-size:17px;margin:26px 0 8px;scroll-margin-top:90px}
+.md p{margin:0 0 12px}
+.md ol,.md ul{margin:0 0 14px;padding-left:22px;display:grid;gap:6px}
+.md li ol,.md li ul{margin:6px 0 0}
+.md code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface-2);padding:1px 6px;border-radius:5px}
+.md blockquote{margin:0 0 14px;padding:12px 16px;border-radius:10px;background:var(--warn-soft);color:var(--text)}
+.md .md-table{overflow-x:auto;margin:0 0 16px}
+.md table{font-size:14px}.md th{background:var(--surface-2)}
+.md td,.md th{border-bottom:1px solid var(--line);vertical-align:top}
+@media (max-width:860px){.help-layout{grid-template-columns:1fr}.help-toc{position:static;display:flex;flex-wrap:wrap;gap:6px}.help-toc a.sub{display:none}.help-toc a{background:var(--surface-2)}}
 .qr{display:grid;grid-template-columns:248px 1fr;gap:20px;align-items:start;margin-top:8px}
 .qr-box{width:248px;height:248px;display:grid;place-items:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px}
 .qr-box img{width:100%;height:100%;object-fit:contain}
@@ -280,7 +298,7 @@ export function layout(title: string, body: Raw, opts: LayoutOpts = {}): string 
 <style>${raw(CSS)}</style></head><body>
 ${nav && config.dryRun ? html`<div class="banner">Modo simulação ativo: as conversões aparecem aqui, mas não estão sendo enviadas para Meta e Google.</div>` : ''}
 <header class="topbar"><a class="logo" href="${nav ? '/admin' : '#'}"><img src="/logo.png" alt="" width="34" height="34">Vendeuzap</a>
-${nav ? html`<nav><a href="/admin">Clientes</a><a href="/admin/clients/new">+ Novo cliente</a></nav>` : ''}</header>
+${nav ? html`<nav><a href="/admin">Clientes</a><a href="/admin/ajuda">Ajuda</a><a href="/admin/clients/new">+ Novo cliente</a></nav>` : ''}</header>
 <main>${flash ? html`<div class="flash ${isErr ? 'err' : ''}">${isErr ? '⚠' : '✓'} ${flash}</div>` : ''}${body}</main>
 <script>${raw(COPY_JS)}</script></body></html>`.value;
 }

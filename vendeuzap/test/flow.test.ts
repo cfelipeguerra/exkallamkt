@@ -182,6 +182,8 @@ test('painel exige autenticação e renderiza', async () => {
     const r = await app.inject({ method: 'GET', url: `/admin/clients/1${tab}`, headers: auth });
     assert.equal(r.statusCode, 200, `aba ${tab}`);
   }
+  const edit = await app.inject({ method: 'GET', url: '/admin/clients/1/edit', headers: auth });
+  for (const id of ['meta', 'google-analytics-4', 'google-ads']) assert.match(edit.body, new RegExp(`/admin/ajuda#${id}`));
   const setup = await app.inject({ method: 'GET', url: '/admin/clients/1/setup', headers: auth });
   assert.equal(setup.statusCode, 200);
   assert.match(setup.body, /webhooks\/evolution\/wh-token/);

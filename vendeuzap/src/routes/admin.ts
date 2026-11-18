@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
 import type { DB } from '../db.js';
 import { now } from '../db.js';
@@ -9,6 +11,7 @@ import {
   type InstanceState, logoutInstance, setInstanceWebhook,
 } from '../integrations/evolution.js';
 import { googleAdsApiEnabled } from '../integrations/platforms.js';
+import { renderMarkdown } from '../lib/markdown.js';
 import { encrypt, normalizePhone, parseMoney, slugify, token } from '../lib/util.js';
 import { clientStats, failedEvents } from '../stats.js';
 import { platformsFor, registerSale } from '../tracking.js';
@@ -325,8 +328,9 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
   const v = (k: keyof Client) => (c[k] ?? '') as string | number;
   const saved = (k: keyof Client) => (c[k] ? '•••••••• (salvo, deixe em branco para manter)' : '');
   const check = (k: keyof Client) => (c[k] ? raw('checked') : '');
-  const section = (title: string, desc: string, fields: Raw) =>
-    html`<div class="section"><div><h3>${title}</h3><p>${desc}</p></div><div>${fields}</div></div>`;
+  const section = (title: string, desc: string, fields: Raw, help?: string) =>
+    html`<div class="section"><div><h3>${title}</h3><p>${desc}</p>
+      ${help ? html`<a class="btn ghost sm" href="/admin/ajuda#${help}" target="_blank" rel="noopener" style="margin-top:8px">Como conectar? ↗</a>` : ''}</div><div>${fields}</div></div>`;
 
   return html`<form method="post" action="${action}" class="card">
   ${section('Dados do cliente', 'Identificação e o número de WhatsApp que será acompanhado.', html`
@@ -364,14 +368,14 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
       <p class="help">Use durante a homologação para ver os eventos em "Testar eventos". Apague depois.</p>
       <label for="f-waba">ID da conta do WhatsApp Business Platform (WABA)</label><input id="f-waba" name="meta_waba_id" value="${v('meta_waba_id')}">
       <p class="help">Só preencha se o número estiver na API oficial da Meta e o pixel estiver vinculado a essa conta. Números conectados pelo WhatsApp Manager normalmente não têm WABA.</p>
-    </details>`)}
+    </details>`, 'meta')}
 
   ${section('Google Analytics 4', 'Registra leads e vendas no GA4 do cliente.', html`
     <div class="form-cols">
       <div><label for="f-ga">ID da métrica</label><input id="f-ga" name="ga4_measurement_id" placeholder="G-XXXXXXXXXX" value="${v('ga4_measurement_id')}"></div>
       <div><label for="f-gs">Chave secreta da API</label><input id="f-gs" name="ga4_api_secret" type="password" autocomplete="off" placeholder="${saved('ga4_api_secret')}">
         <p class="help">GA4 › Administrador › Fluxos de dados › Chaves secretas da API do Measurement Protocol.</p></div>
-    </div>`)}
+    </div>`, 'google-analytics-4')}
 
   ${section('Google Ads', 'Envia vendas de quem clicou em anúncios do Google (precisa do link rastreável ou da tag no site).', html`
     <div class="form-cols">
@@ -386,7 +390,7 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
         <div><label for="f-gli">ID da conversão de lead (envio pela API)</label><input id="f-gli" name="gads_lead_action_id" value="${v('gads_lead_action_id')}"></div>
       </div>
       <p class="help">${googleAdsApiEnabled() ? 'O servidor tem acesso à API do Google Ads: com os IDs preenchidos, o envio é automático.' : 'O servidor não tem credenciais da API do Google Ads. Use a importação agendada (link na aba Instalação), que só precisa do nome da conversão.'}</p>
-    </details>`)}
+    </details>`, 'google-ads')}
 
   ${'id' in c && c.id ? section('Status', 'Clientes pausados deixam de registrar conversas e enviar conversões.', html`
     <label class="check"><input type="checkbox" name="active" value="1" ${check('active')}> <span>Cliente ativo</span></label>`) : ''}
@@ -444,6 +448,22 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   const send = (reply: FastifyReply, page: string) => reply.type('text/html').send(page);
+
+  // ----- Central de ajuda --------------------------------------------------
+  const helpFile = fileURLToPath(new URL('../../public/ajuda.md', import.meta.url));
+  app.get('/admin/ajuda', async (_req, reply) => {
+    // Lido a cada acesso: atualizar o ajuda.md não exige reiniciar o app
+    const { html: content, headings } = renderMarkdown(readFileSync(helpFile, 'utf8'));
+    const toc = headings.filter((h) => h.level === 2 || h.level === 3);
+    const body = html`
+      <a class="back" href="/admin">← Clientes</a>
+      <div class="page-head"><div><h1>Central de ajuda</h1><p class="sub">Como conectar a Meta, o Google Analytics e o Google Ads.</p></div></div>
+      <div class="help-layout">
+        <nav class="help-toc" aria-label="Nesta página">${toc.map((h) => html`<a class="${h.level === 3 ? 'sub' : ''}" href="#${h.id}">${h.text}</a>`)}</nav>
+        <article class="card md">${raw(content)}</article>
+      </div>`;
+    send(reply, layout('Central de ajuda', body));
+  });
 
   // ----- Lista de clientes -------------------------------------------------
   app.get('/admin', async (req, reply) => {
@@ -667,7 +687,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
       ${step(2, platforms.length > 0, 'Escolher para onde enviar as conversões',
         platforms.length ? html`<span class="pill pill-ok">${platforms.map((p) => PLATFORM_LABEL[p]).join(', ')}</span>` : html`<span class="pill pill-warn">Nenhuma plataforma</span>`,
         html`<p class="muted">Informe o Pixel da Meta, o GA4 e/ou o Google Ads do cliente.</p>
-        <a class="btn ghost" href="/admin/clients/${c.id}/edit">Abrir configurações</a>`)}
+        <div class="row"><a class="btn ghost" href="/admin/clients/${c.id}/edit">Abrir configurações</a>
+        <a class="btn ghost" href="/admin/ajuda" target="_blank" rel="noopener">Passo a passo ↗</a></div>`)}
 
       ${step(3, labels.length > 0, 'Usar etiquetas do WhatsApp Business',
         labels.length ? html`<span class="pill pill-ok">${labels.length} etiqueta${labels.length > 1 ? 's' : ''}</span>` : html``,
