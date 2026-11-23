@@ -126,6 +126,58 @@ test('anúncio CTWA (sem WABA) usa CAPI padrão; com WABA usa business_messaging
   db.prepare(`UPDATE clients SET meta_waba_id = NULL WHERE id = 1`).run();
 });
 
+test('lead qualificado por frase da equipe, por etiqueta e pelo botão do painel', async () => {
+  db.prepare(`UPDATE clients SET qualified_keywords = 'orçamento enviado|segue a proposta' WHERE id = 1`).run();
+  const phone = '5541977771111';
+  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(phone, 'Oi, quero um orçamento') });
+
+  // Mesma frase enviada pelo lead não qualifica
+  let w = await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(phone, 'Orçamento enviado?') });
+  let c = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone) as Contact;
+  assert.equal(c.status, 'lead');
+
+  // Enviada pela empresa (sem acento e com outras palavras em volta) qualifica
+  w = await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(phone, 'Pronto, ORCAMENTO ENVIADO por e-mail!', {}, true) });
+  assert.match(JSON.stringify(w.json()), /lead qualificado por frase/);
+  c = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone) as Contact;
+  assert.equal(c.status, 'qualified');
+
+  // Uma segunda frase não gera outro evento
+  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(phone, 'Segue a proposta atualizada', {}, true) });
+  const q = db.prepare(`SELECT platform, event_id FROM events WHERE contact_id = ? AND kind = 'qualified' ORDER BY platform`).all(c.id) as { platform: string }[];
+  assert.deepEqual(q.map((e) => e.platform), ['ga4', 'gads', 'meta']);
+
+  await runDispatcherOnce(db);
+  const meta = db.prepare(`SELECT * FROM events WHERE contact_id = ? AND kind = 'qualified' AND platform = 'meta'`).get(c.id) as TrackEvent;
+  assert.equal(JSON.parse(meta.request!).data[0].event_name, 'QualifiedLead');
+  const ga = db.prepare(`SELECT * FROM events WHERE contact_id = ? AND kind = 'qualified' AND platform = 'ga4'`).get(c.id) as TrackEvent;
+  assert.equal(JSON.parse(ga.request!).events[0].name, 'qualify_lead');
+
+  // Depois a venda: vira cliente e não volta a "qualificado"
+  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(phone, 'Pagamento confirmado! Total R$ 900,00', {}, true) });
+  c = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone) as Contact;
+  assert.equal(c.status, 'customer');
+  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(phone, 'orçamento enviado de outro item', {}, true) });
+  assert.equal((db.prepare('SELECT status FROM contacts WHERE id = ?').get(c.id) as Contact).status, 'customer');
+
+  // Botão "Qualificar" no painel
+  const other = '5541977772222';
+  await app.inject({ method: 'POST', url: WEBHOOK, payload: msg(other, 'Bom dia') });
+  const o = db.prepare('SELECT * FROM contacts WHERE phone = ?').get(other) as Contact;
+  const page = await app.inject({ method: 'GET', url: '/admin/clients/1/contacts', headers: auth });
+  assert.match(page.body, new RegExp(`/admin/contacts/${o.id}/qualify`));
+  const r = await app.inject({
+    method: 'POST', url: `/admin/contacts/${o.id}/qualify`, headers: { ...auth, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: 'back=%2Fadmin%2Fclients%2F1%2Fcontacts',
+  });
+  assert.equal(r.statusCode, 303);
+  assert.match(decodeURIComponent(String(r.headers.location)), /marcado como lead qualificado/);
+  assert.equal((db.prepare('SELECT status FROM contacts WHERE id = ?').get(o.id) as Contact).status, 'qualified');
+  const again = await app.inject({ method: 'POST', url: `/admin/contacts/${o.id}/qualify`, headers: auth });
+  assert.match(decodeURIComponent(String(again.headers.location)), /já estava qualificado/);
+  db.prepare(`UPDATE clients SET qualified_keywords = '' WHERE id = 1`).run();
+});
+
 test('tag do site: clique via sendBeacon (text/plain) e atribuição', async () => {
   const r = await app.inject({
     method: 'POST', url: '/api/click', headers: { 'content-type': 'text/plain' },

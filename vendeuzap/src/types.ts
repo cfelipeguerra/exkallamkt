@@ -12,6 +12,7 @@ export interface Client {
   sale_keywords: string;
   sale_labels: string;
   qualified_labels: string;
+  qualified_keywords: string;
   send_lead_event: number;
   invisible_ref: number;
   meta_pixel_id: string | null;

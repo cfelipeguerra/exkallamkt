@@ -17,7 +17,7 @@ export function funnelCard(s: ClientStats): Raw {
       <span class="val"><b>${v}</b>${v !== s.leads && s.leads ? ` · ${pct(v / s.leads)}` : ''}</span></div>`;
   return html`<div class="card"><div class="card-head"><h2>Funil</h2><span class="muted small">últimos ${s.days} dias</span></div>
     <div class="funnel">${step('Conversas', s.leads)}${step('Qualificados', Math.max(s.qualified, s.customers))}${step('Compraram', s.customers)}</div>
-    <p class="help" style="margin-top:12px">"Qualificados" usa a etiqueta de qualificação do WhatsApp Business (configurável).</p></div>`;
+    <p class="help" style="margin-top:12px">"Qualificados" vem da frase de qualificação enviada pela equipe, da etiqueta do WhatsApp Business ou do botão Qualificar.</p></div>`;
 }
 
 export function sourcesCard(s: ClientStats, currency: string): Raw {

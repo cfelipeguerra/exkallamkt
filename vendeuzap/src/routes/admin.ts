@@ -14,7 +14,7 @@ import { googleAdsApiEnabled } from '../integrations/platforms.js';
 import { renderMarkdown } from '../lib/markdown.js';
 import { encrypt, normalizePhone, parseMoney, slugify, token } from '../lib/util.js';
 import { clientStats, failedEvents } from '../stats.js';
-import { platformsFor, registerSale } from '../tracking.js';
+import { markQualified, platformsFor, registerSale } from '../tracking.js';
 import type { Client, Contact, Sale, TrackEvent, TrackingLink } from '../types.js';
 import { campaignsCard, funnelCard, kpiRow, sourcesCard } from '../views/components.js';
 import {
@@ -116,6 +116,11 @@ function saleButton(contact: Contact, client: Client, backUrl: string): Raw {
     </form></div></details>`;
 }
 
+function qualifyButton(contact: Contact, backUrl: string): Raw {
+  return html`<form method="post" action="/admin/contacts/${contact.id}/qualify" style="display:inline">
+    <input type="hidden" name="back" value="${backUrl}"><button class="ghost sm" title="Marcar como lead qualificado e avisar Meta e GA4">Qualificar</button></form>`;
+}
+
 type ContactRow = Contact & { campaign: string | null; sales_total: number | null };
 
 function contactsTable(rows: ContactRow[], client: Client, backUrl: string): Raw {
@@ -131,7 +136,7 @@ function contactsTable(rows: ContactRow[], client: Client, backUrl: string): Raw
       <td>${STATUS_PILL[c.status]}</td>
       <td class="muted" title="${dt(c.last_message_at)}">${ago(c.last_message_at)}</td>
       <td class="num">${c.sales_total ? html`<b>${brl(c.sales_total, client.currency)}</b>` : html`<span class="muted">—</span>`}</td>
-      <td class="num">${saleButton(c, client, backUrl)}</td></tr>`,
+      <td class="num"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap">${c.status === 'lead' ? qualifyButton(c, backUrl) : ''}${saleButton(c, client, backUrl)}</div></td></tr>`,
   )}</table></div>`;
 }
 
@@ -341,14 +346,19 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
         <p class="help">${'id' in c && c.id ? 'Exatamente como aparece no WhatsApp Manager.' : 'Número novo: deixe em branco e o Vendeuzap cria a instância e mostra o QR Code. Número já conectado no Manager: coloque o nome exato da instância.'}</p></div>
     </div>`)}
 
+  ${section('Como identificar um lead qualificado', 'Leads que mostraram interesse real (pediram orçamento, agendaram visita) aparecem no funil e vão para a Meta e o GA4 como lead qualificado.', html`
+    <label for="f-qkw">Frases de qualificação enviadas pela equipe</label>
+    <textarea id="f-qkw" name="qualified_keywords" rows="2" placeholder="Ex.: orçamento enviado|segue a proposta|visita agendada">${v('qualified_keywords')}</textarea>
+    <p class="help">Separe por "|". Vale só para mensagens enviadas pelo WhatsApp do cliente, nunca pelo lead. Também dá para qualificar pela etiqueta abaixo ou pelo botão "Qualificar" em Conversas.</p>
+    <label for="f-ql">Etiqueta de lead qualificado no WhatsApp Business</label>
+    <input id="f-ql" name="qualified_labels" value="${v('qualified_labels')}" placeholder="Qualificado" style="max-width:360px">`)}
+
   ${section('Como identificar uma venda', 'O Vendeuzap marca a venda automaticamente quando uma destas coisas acontece na conversa.', html`
     <label for="f-kw">Frases de confirmação enviadas pela equipe</label>
     <textarea id="f-kw" name="sale_keywords" rows="2">${v('sale_keywords')}</textarea>
     <p class="help">Separe por "|". Ex.: pagamento confirmado|pedido confirmado. O valor é lido da própria conversa ("Total: R$ 150,00").</p>
-    <div class="form-cols">
-      <div><label for="f-sl">Etiqueta de venda no WhatsApp Business</label><input id="f-sl" name="sale_labels" value="${v('sale_labels')}" placeholder="Venda"></div>
-      <div><label for="f-ql">Etiqueta de lead qualificado</label><input id="f-ql" name="qualified_labels" value="${v('qualified_labels')}" placeholder="Qualificado"></div>
-    </div>
+    <label for="f-sl">Etiqueta de venda no WhatsApp Business</label>
+    <input id="f-sl" name="sale_labels" value="${v('sale_labels')}" placeholder="Venda" style="max-width:360px">
     <label for="f-dv">Valor usado quando a conversa não informa o valor</label>
     <input id="f-dv" name="default_sale_value" inputmode="decimal" value="${String(v('default_sale_value') || 0).replace('.', ',')}" style="max-width:200px">
     <details class="more"><summary>Mais opções</summary>
@@ -410,6 +420,7 @@ function readClientForm(f: Form, existing?: Client): Record<string, unknown> {
     sale_keywords: t('sale_keywords') || '',
     sale_labels: t('sale_labels') || '',
     qualified_labels: t('qualified_labels') || '',
+    qualified_keywords: t('qualified_keywords') || '',
     send_lead_event: f.send_lead_event ? 1 : 0,
     invisible_ref: f.invisible_ref ? 1 : 0,
     meta_pixel_id: t('meta_pixel_id'),
@@ -755,6 +766,16 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const value = typed ?? contact.last_quoted_value ?? client.default_sale_value;
     registerSale(db, client, contact, { value, detectedBy: 'manual' });
     return back(reply, safeBack(f.back, `/admin/clients/${client.id}`), `Venda de ${brl(value, client.currency)} registrada para ${contact.push_name || formatPhone(contact.phone)}.`);
+  });
+
+  app.post('/admin/contacts/:id/qualify', async (req, reply) => {
+    const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(Number((req.params as Form).id)) as Contact | undefined;
+    if (!contact) return notFound(reply);
+    const client = getClient(db, contact.client_id)!;
+    const done = markQualified(db, client, contact.id);
+    const who = contact.push_name || formatPhone(contact.phone);
+    return back(reply, safeBack((req.body as Form)?.back, `/admin/clients/${client.id}/contacts`),
+      done ? `${who} marcado como lead qualificado.` : `${who} já estava qualificado ou já comprou.`);
   });
 
   app.post('/admin/sales/:id/delete', async (req, reply) => {

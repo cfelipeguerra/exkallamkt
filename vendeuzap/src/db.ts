@@ -133,6 +133,9 @@ const MIGRATIONS: string[] = [
   CREATE INDEX events_client_event ON events(client_id, event_id);
   CREATE INDEX contacts_client_last ON contacts(client_id, last_message_at);
   `,
+  `
+  ALTER TABLE clients ADD COLUMN qualified_keywords TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export function openDb(path = config.dbPath): DB {

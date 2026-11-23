@@ -160,7 +160,7 @@ function handleMessage(db: DB, client: Client, ev: Extract<EvolutionEvent, { typ
     }
     db.prepare(`UPDATE contacts SET ${updates.join(', ')} WHERE id = ?`).run(...params, contact.id);
 
-    // Detecção de venda por palavra-chave (somente mensagens enviadas pela empresa)
+    // Frases enviadas pela empresa (nunca pelo lead): venda tem prioridade sobre qualificação
     if (ev.fromMe && ev.text) {
       const hit = matchesAny(ev.text, splitList(client.sale_keywords));
       if (hit) {
@@ -171,6 +171,9 @@ function handleMessage(db: DB, client: Client, ev: Extract<EvolutionEvent, { typ
           note: `Palavra-chave: "${hit}"`,
         });
         if (sale) return { action: 'venda por palavra-chave', contactId: contact.id, saleId: sale.id };
+      }
+      if (!hit && matchesAny(ev.text, splitList(client.qualified_keywords)) && markQualified(db, client, contact.id)) {
+        return { action: 'lead qualificado por frase', contactId: contact.id };
       }
     }
     return { action: 'mensagem registrada', contactId: contact.id };
@@ -202,13 +205,21 @@ function handleLabel(db: DB, client: Client, chatId: string, labelId: string, ac
     return sale ? { action: 'venda por etiqueta', contactId: contact.id, saleId: sale.id } : { action: 'venda duplicada ignorada' };
   }
   if (normEq(label.name, client.qualified_labels)) {
-    if (contact.status === 'lead') {
-      db.prepare("UPDATE contacts SET status = 'qualified' WHERE id = ?").run(contact.id);
-      enqueueEvents(db, client, 'qualified', contact.id, null);
-    }
+    markQualified(db, client, contact.id);
     return { action: 'lead qualificado', contactId: contact.id };
   }
   return { action: `etiqueta "${label.name}" sem regra` };
+}
+
+/**
+ * Marca o contato como lead qualificado e envia o evento às plataformas, uma única vez.
+ * Só vale para quem ainda é "lead": quem já comprou continua como cliente.
+ * Usado pela frase de qualificação, pela etiqueta e pelo botão "Qualificar" do painel.
+ */
+export function markQualified(db: DB, client: Client, contactId: number): boolean {
+  const changed = db.prepare("UPDATE contacts SET status = 'qualified' WHERE id = ? AND status = 'lead'").run(contactId).changes > 0;
+  if (changed) enqueueEvents(db, client, 'qualified', contactId, null);
+  return changed;
 }
 
 /** Compara o nome da etiqueta com a lista configurada (igualdade, sem acento/maiúsculas). */

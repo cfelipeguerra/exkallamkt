@@ -12,6 +12,22 @@ O Vendeuzap envia cada venda, e cada conversa nova, para as plataformas de anún
 3. **Valor padrão:** em **Configurações**, preencha "Valor usado quando a conversa não informa o valor" com o ticket médio. Com 0, uma venda sem valor chega às plataformas como R$ 0.
 4. **Modo simulação:** se aparecer uma faixa amarela "Modo simulação ativo" no topo do painel, nada está sendo enviado de verdade. Quem administra o servidor precisa trocar `DRY_RUN=true` por `DRY_RUN=false` no Coolify e reiniciar o app.
 
+## Leads qualificados
+
+O funil do painel tem três etapas: **Conversas**, **Qualificados** e **Compraram**. Um lead vira qualificado quando mostra interesse real, como pedir um orçamento ou agendar uma visita. Há três formas de marcar:
+
+1. **Frase de qualificação enviada pela equipe:** em **Configurações** › **Como identificar um lead qualificado**, cadastre as frases que a equipe já usa, separadas por "|". Por exemplo: `orçamento enviado|segue a proposta|visita agendada`. Vale só para mensagens que saem do WhatsApp do cliente, nunca do lead.
+2. **Etiqueta do WhatsApp Business:** a etiqueta **Qualificado** (ou o nome que estiver em Configurações).
+3. **Botão Qualificar:** na aba **Conversas**, ao lado de "Registrar venda".
+
+Cada lead é qualificado uma vez só, e quem já comprou continua como cliente. O Vendeuzap envia:
+
+- para a **Meta**, o evento `QualifiedLead`;
+- para o **Google Analytics 4**, o evento `qualify_lead`;
+- para o **Google Ads**, nada: só as vendas vão para lá.
+
+> Na Meta, `QualifiedLead` aparece como evento personalizado. Para usá-lo em relatórios ou na otimização de campanhas, crie uma **Conversão personalizada** no Gerenciador de Eventos a partir desse evento.
+
 ## Meta
 
 ### 1. Escolher o conjunto de dados (Pixel)
