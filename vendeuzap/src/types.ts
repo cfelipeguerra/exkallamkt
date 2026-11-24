@@ -28,7 +28,28 @@ export interface Client {
   gads_lead_action_name: string | null;
   active: number;
   last_webhook_at: number | null;
+  account_id: number | null;
   created_at: number;
+}
+
+export interface Account {
+  id: number;
+  plan: string;
+  cycle: string | null;
+  numbers_allowed: number;
+  status: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  created_at: number;
+}
+
+export interface User {
+  id: number;
+  email: string;
+  name: string | null;
+  account_id: number | null;
+  created_at: number;
+  last_login_at: number | null;
 }
 
 export interface TrackingLink {

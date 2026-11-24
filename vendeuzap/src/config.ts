@@ -45,6 +45,22 @@ export const config = {
     refreshToken: env('GOOGLE_ADS_REFRESH_TOKEN', ''),
   },
 
+  /** Assinaturas pela Stripe (o webhook cria a conta do cliente automaticamente). */
+  stripe: {
+    webhookSecret: env('STRIPE_WEBHOOK_SECRET', ''),
+    /** Link de login do portal do cliente (Stripe › Configurações › Portal do cliente). */
+    portalUrl: env('STRIPE_PORTAL_URL', ''),
+  },
+
+  /** E-mails transacionais (boas-vindas, link de acesso). Sem chave, os e-mails só vão para o log. */
+  email: {
+    resendApiKey: env('RESEND_API_KEY', ''),
+    from: env('EMAIL_FROM', 'Vendeuzap <ola@vendeuzap.com.br>'),
+    replyTo: env('EMAIL_REPLY_TO', ''),
+    /** Quem recebe o aviso de cada nova assinatura. */
+    notify: env('NOTIFY_EMAIL', ''),
+  },
+
   /** Quando true, nenhum evento é enviado de fato às plataformas (útil para homologação). */
   dryRun: env('DRY_RUN', isTest ? 'true' : 'false') === 'true',
   dispatcherIntervalMs: Number(env('DISPATCHER_INTERVAL_MS', '10000')),

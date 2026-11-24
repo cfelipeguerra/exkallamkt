@@ -136,6 +136,39 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE clients ADD COLUMN qualified_keywords TEXT NOT NULL DEFAULT '';
   `,
+  `
+  CREATE TABLE accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan TEXT NOT NULL DEFAULT 'essencial',     -- 'essencial' | 'profissional' | 'agencia'
+    cycle TEXT,                                 -- 'mensal' | 'anual'
+    numbers_allowed INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'active',      -- status da assinatura na Stripe
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT UNIQUE,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_login_at INTEGER
+  );
+  CREATE TABLE login_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  );
+  CREATE TABLE stripe_events (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    received_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  ALTER TABLE clients ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL;
+  CREATE INDEX clients_account ON clients(account_id);
+  `,
 ];
 
 export function openDb(path = config.dbPath): DB {

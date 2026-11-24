@@ -226,7 +226,9 @@ test('API de vendas, feed CSV e relatório', async () => {
 });
 
 test('painel exige autenticação e renderiza', async () => {
-  assert.equal((await app.inject({ method: 'GET', url: '/admin' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'GET', url: '/admin' })).headers.location, '/entrar');
+  assert.equal((await app.inject({ method: 'GET', url: '/admin?agencia=1' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'GET', url: '/admin', headers: { authorization: 'Basic eDp5' } })).statusCode, 401);
   const home = await app.inject({ method: 'GET', url: '/admin', headers: auth });
   assert.equal(home.statusCode, 200);
   assert.match(home.body, /Loja Teste/);

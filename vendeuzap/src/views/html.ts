@@ -1,3 +1,4 @@
+import { currentViewer } from '../auth.js';
 import { config } from '../config.js';
 import { escapeHtml } from '../lib/util.js';
 
@@ -119,6 +120,8 @@ a{color:inherit}
 .logo img{width:34px;height:34px;border-radius:9px;display:block}
 .topbar nav{display:flex;gap:4px;margin-left:auto}
 .topbar nav a{padding:7px 12px;border-radius:8px;text-decoration:none;color:var(--on-navy-muted);font-size:14px;font-weight:550}
+.topbar nav .navlink{background:none;border:0;padding:7px 12px;color:var(--on-navy-muted);font-size:14px;font-weight:550}
+.topbar nav .navlink:hover{background:rgba(255,255,255,.1);color:var(--on-navy);filter:none}
 .topbar nav a:hover{background:rgba(255,255,255,.1);color:var(--on-navy)}
 main{max-width:1120px;margin:0 auto;padding:24px 16px 72px}
 h1{font-size:24px;line-height:1.25;margin:0;letter-spacing:-.015em}
@@ -289,6 +292,7 @@ export interface LayoutOpts {
 
 export function layout(title: string, body: Raw, opts: LayoutOpts = {}): string {
   const nav = opts.nav !== false;
+  const customer = currentViewer()?.role === 'customer';
   const flash = opts.flash;
   const isErr = flash ? /^(erro|falha)/i.test(flash) : false;
   return html`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
@@ -296,9 +300,11 @@ export function layout(title: string, body: Raw, opts: LayoutOpts = {}): string 
 <link rel="icon" type="image/png" href="/favicon.png"><meta name="theme-color" content="#08213d">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${raw(CSS)}</style></head><body>
-${nav && config.dryRun ? html`<div class="banner">Modo simulação ativo: as conversões aparecem aqui, mas não estão sendo enviadas para Meta e Google.</div>` : ''}
+${nav && config.dryRun && !customer ? html`<div class="banner">Modo simulação ativo: as conversões aparecem aqui, mas não estão sendo enviadas para Meta e Google.</div>` : ''}
 <header class="topbar"><a class="logo" href="${nav ? '/admin' : '#'}"><img src="/logo.png" alt="" width="34" height="34">Vendeuzap</a>
-${nav ? html`<nav><a href="/admin">Clientes</a><a href="/admin/ajuda">Ajuda</a><a href="/admin/clients/new">+ Novo cliente</a></nav>` : ''}</header>
+${nav ? (customer
+  ? html`<nav><a href="/admin">Meus números</a><a href="/admin/ajuda">Ajuda</a>${config.stripe.portalUrl ? html`<a href="${config.stripe.portalUrl}" target="_blank" rel="noopener">Minha assinatura</a>` : ''}<form method="post" action="/sair" style="display:inline"><button class="navlink">Sair</button></form></nav>`
+  : html`<nav><a href="/admin">Clientes</a><a href="/admin/ajuda">Ajuda</a><a href="/admin/clients/new">+ Novo cliente</a></nav>`) : ''}</header>
 <main>${flash ? html`<div class="flash ${isErr ? 'err' : ''}">${isErr ? '⚠' : '✓'} ${flash}</div>` : ''}${body}</main>
 <script>${raw(COPY_JS)}</script></body></html>`.value;
 }

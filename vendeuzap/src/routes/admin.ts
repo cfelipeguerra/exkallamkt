@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { canSee, checkAdminAuth, currentViewer, customerViewer, type Viewer, viewerStore } from '../auth.js';
 import { config } from '../config.js';
+import { planLabel } from '../email.js';
 import type { DB } from '../db.js';
 import { now } from '../db.js';
 import { processEvent } from '../dispatcher.js';
@@ -15,7 +16,7 @@ import { renderMarkdown } from '../lib/markdown.js';
 import { encrypt, normalizePhone, parseMoney, slugify, token } from '../lib/util.js';
 import { clientStats, failedEvents } from '../stats.js';
 import { markQualified, platformsFor, registerSale } from '../tracking.js';
-import type { Client, Contact, Sale, TrackEvent, TrackingLink } from '../types.js';
+import type { Account, Client, Contact, Sale, TrackEvent, TrackingLink } from '../types.js';
 import { campaignsCard, funnelCard, kpiRow, sourcesCard } from '../views/components.js';
 import {
   ago, brl, copyable, dt, html, initials, layout, raw, type Raw, SOURCE_LABEL, sourceChip, STATUS_PILL,
@@ -27,13 +28,22 @@ type Form = Record<string, string | undefined>;
 // Utilidades
 // ---------------------------------------------------------------------------
 
-function checkAuth(req: FastifyRequest): boolean {
-  const h = String(req.headers.authorization || '');
-  if (!h.startsWith('Basic ')) return false;
-  const [user, ...rest] = Buffer.from(h.slice(6), 'base64').toString('utf8').split(':');
-  const pass = rest.join(':');
-  const eq = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-  return eq(user, config.admin.user) && eq(pass, config.admin.password);
+/** Visitante é cliente (não a agência)? */
+const isCustomer = (v: Viewer | undefined = currentViewer()): v is Extract<Viewer, { role: 'customer' }> => v?.role === 'customer';
+
+const uniqueInstanceWith = (db: DB, base: string): string => {
+  let name = base;
+  while (db.prepare('SELECT 1 FROM clients WHERE evolution_instance = ?').get(name)) name = `${base}-${token(2).toLowerCase()}`;
+  return name;
+};
+
+/** Aviso no topo quando a assinatura do cliente não está em dia. */
+function accountBannerFor(acc: Account | null): Raw {
+  if (!acc || ['active', 'trialing'].includes(acc.status)) return html``;
+  const msg = acc.status === 'past_due' || acc.status === 'unpaid'
+    ? 'Não conseguimos cobrar a sua assinatura. Atualize a forma de pagamento para os números continuarem funcionando.'
+    : 'Sua assinatura não está ativa. Os números estão pausados e não enviam vendas para as plataformas.';
+  return html`<div class="flash err">⚠ ${msg}${config.stripe.portalUrl ? html` <a href="${config.stripe.portalUrl}" target="_blank" rel="noopener">Abrir minha assinatura</a>` : ''}</div>`;
 }
 
 const getClient = (db: DB, id: unknown): Client | undefined =>
@@ -89,7 +99,7 @@ function clientPage(db: DB, c: Client, tab: Tab, body: Raw, flash: string | null
     ['edit', 'Configurações', '/edit'],
   ];
   const head = html`
-  <a class="back" href="/admin">← Clientes</a>
+  <a class="back" href="/admin">← ${isCustomer() ? 'Meus números' : 'Clientes'}</a>
   <div class="page-head"><div><h1>${c.name}</h1>
     <div class="row sub">${connection(c)}<span>WhatsApp ${formatPhone(c.whatsapp_number)}</span></div></div>
     <a class="btn ghost" href="/report/${c.report_token}" target="_blank" rel="noopener">Relatório do cliente ↗</a></div>
@@ -97,7 +107,8 @@ function clientPage(db: DB, c: Client, tab: Tab, body: Raw, flash: string | null
     ([key, label, path]) =>
       html`<a class="${tab === key ? 'on' : ''}" href="/admin/clients/${c.id}${path}">${label}${key === 'events' && failed ? html`<span class="count" title="Envios com falha">${failed}</span>` : ''}</a>`,
   )}</nav>`;
-  return layout(c.name, html`${head}${body}`, { flash });
+  const v = currentViewer();
+  return layout(c.name, html`${isCustomer(v) ? accountBannerFor(v.account) : ''}${head}${body}`, { flash });
 }
 
 // ---------------------------------------------------------------------------
@@ -337,13 +348,14 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
     html`<div class="section"><div><h3>${title}</h3><p>${desc}</p>
       ${help ? html`<a class="btn ghost sm" href="/admin/ajuda#${help}" target="_blank" rel="noopener" style="margin-top:8px">Como conectar? ↗</a>` : ''}</div><div>${fields}</div></div>`;
 
+  const customer = isCustomer();
   return html`<form method="post" action="${action}" class="card">
-  ${section('Dados do cliente', 'Identificação e o número de WhatsApp que será acompanhado.', html`
+  ${section(customer ? 'Dados do número' : 'Dados do cliente', 'Identificação e o número de WhatsApp que será acompanhado.', html`
     <label for="f-name">Nome do cliente</label><input id="f-name" name="name" required value="${v('name')}" placeholder="Ex.: Ótica Visão Clara">
     <div class="form-cols">
       <div><label for="f-wa">WhatsApp</label><input id="f-wa" name="whatsapp_number" required placeholder="(11) 99999-9999" value="${c.whatsapp_number ? formatPhone(c.whatsapp_number) : ''}"></div>
-      <div><label for="f-inst">Instância no WhatsApp Manager</label><input id="f-inst" name="evolution_instance" value="${v('evolution_instance')}" placeholder="${'id' in c && c.id ? '' : 'Deixe em branco para criar uma nova'}">
-        <p class="help">${'id' in c && c.id ? 'Exatamente como aparece no WhatsApp Manager.' : 'Número novo: deixe em branco e o Vendeuzap cria a instância e mostra o QR Code. Número já conectado no Manager: coloque o nome exato da instância.'}</p></div>
+      ${customer ? '' : html`<div><label for="f-inst">Instância no WhatsApp Manager</label><input id="f-inst" name="evolution_instance" value="${v('evolution_instance')}" placeholder="${'id' in c && c.id ? '' : 'Deixe em branco para criar uma nova'}">
+        <p class="help">${'id' in c && c.id ? 'Exatamente como aparece no WhatsApp Manager.' : 'Número novo: deixe em branco e o Vendeuzap cria a instância e mostra o QR Code. Número já conectado no Manager: coloque o nome exato da instância.'}</p></div>`}
     </div>`)}
 
   ${section('Como identificar um lead qualificado', 'Leads que mostraram interesse real (pediram orçamento, agendaram visita) aparecem no funil e vão para a Meta e o GA4 como lead qualificado.', html`
@@ -402,7 +414,7 @@ function clientForm(c: Partial<Client>, action: string, submitLabel: string): Ra
       <p class="help">${googleAdsApiEnabled() ? 'O servidor tem acesso à API do Google Ads: com os IDs preenchidos, o envio é automático.' : 'O servidor não tem credenciais da API do Google Ads. Use a importação agendada (link na aba Instalação), que só precisa do nome da conversão.'}</p>
     </details>`, 'google-ads')}
 
-  ${'id' in c && c.id ? section('Status', 'Clientes pausados deixam de registrar conversas e enviar conversões.', html`
+  ${'id' in c && c.id && !customer ? section('Status', 'Clientes pausados deixam de registrar conversas e enviar conversões.', html`
     <label class="check"><input type="checkbox" name="active" value="1" ${check('active')}> <span>Cliente ativo</span></label>`) : ''}
   <div class="row" style="justify-content:flex-end;border-top:1px solid var(--line);padding-top:16px"><button>${submitLabel}</button></div>
   </form>`;
@@ -451,14 +463,59 @@ const NEW_CLIENT_DEFAULTS: Partial<Client> = {
 // ---------------------------------------------------------------------------
 
 export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
-  app.addHook('onRequest', async (req, reply) => {
-    if (!req.url.startsWith('/admin')) return;
-    if (!checkAuth(req)) {
-      reply.header('WWW-Authenticate', 'Basic realm="Vendeuzap"').code(401).send('Autenticação necessária');
+  // Agência entra com usuário e senha; cliente entra pelo link de acesso (cookie de sessão).
+  // O visitante fica disponível em currentViewer() até o fim da requisição.
+  app.addHook('onRequest', (req, reply, done) => {
+    if (!req.url.startsWith('/admin')) return done();
+    let viewer: Viewer | null = null;
+    if (checkAdminAuth(req)) viewer = { role: 'admin' };
+    else if (!req.headers.authorization) viewer = customerViewer(db, req);
+    if (!viewer) {
+      const wantsAgency = req.headers.authorization || /[?&]agencia=1/.test(req.url);
+      if (wantsAgency) {
+        reply.header('WWW-Authenticate', 'Basic realm="Vendeuzap"').code(401).send('Autenticação necessária');
+      } else if (req.method === 'GET') {
+        reply.redirect('/entrar', 303);
+      } else {
+        reply.code(401).send('Sua sessão expirou. Entre de novo em /entrar.');
+      }
+      return;
     }
+    viewerStore.run(viewer, () => done());
   });
 
+  /** Cliente que o visitante pode ver (a agência vê todos; o cliente, só os da própria conta). */
+  const visibleClient = (id: unknown): Client | undefined => {
+    const c = getClient(db, id);
+    return c && canSee(currentViewer(), c.id) ? c : undefined;
+  };
+  const uniqueInstance = (base: string) => uniqueInstanceWith(db, base);
+  const visible = (clientId: number | undefined) => clientId !== undefined && canSee(currentViewer(), clientId);
+
   const send = (reply: FastifyReply, page: string) => reply.type('text/html').send(page);
+
+  /** Início do cliente: os números da conta, o plano e quantos números ainda dá para adicionar. */
+  const customerHome = (viewer: Extract<Viewer, { role: 'customer' }>, clients: Client[]): Raw => {
+    const acc = viewer.account;
+    const limit = acc?.numbers_allowed ?? 0;
+    const canAdd = !!acc && ['active', 'trialing'].includes(acc.status) && clients.length < limit;
+    const items = clients.map((c) => ({ c, s: clientStats(db, c.id) }));
+    return html`
+    ${accountBanner(acc)}
+    <div class="page-head"><div><h1>Meus números de WhatsApp</h1>
+      <p class="sub">${acc ? `Plano ${planLabel(acc.plan)} · ${clients.length} de ${limit} número${limit === 1 ? '' : 's'} em uso` : 'Sem assinatura ativa'}</p></div>
+      ${canAdd ? html`<a class="btn" href="/admin/clients/new">+ Adicionar número</a>` : ''}</div>
+    ${items.length ? html`<div class="grid g3">${items.map(({ c, s }) => html`
+      <a class="card client-card" href="/admin/clients/${c.id}">
+        <div class="top"><h3 style="margin:0">${c.name}</h3><span class="muted small">${c.whatsapp_number ? formatPhone(c.whatsapp_number) : 'WhatsApp não informado'}</span>${connection(c)}</div>
+        <div class="nums"><div><b>${s.leads}</b><span>conversas</span></div><div><b>${s.sales}</b><span>vendas</span></div><div><b>${brl(s.revenue, c.currency).replace(/,\d{2}$/, '')}</b><span>faturado</span></div></div>
+        <div class="foot">${platformsFor(c).length ? platformsFor(c).map((p) => html`<span class="chip">${PLATFORM_LABEL[p]}</span>`) : html`<span class="pill pill-warn">Falta configurar Meta ou Google</span>`}</div>
+      </a>`)}</div>`
+    : html`<div class="card empty"><b>Nenhum número ainda</b><p>Adicione o primeiro número para conectar o WhatsApp.</p>${canAdd ? html`<a class="btn" href="/admin/clients/new">+ Adicionar número</a>` : ''}</div>`}
+    ${acc && clients.length >= limit ? html`<p class="help" style="margin-top:16px">Para conectar mais números, inclua números extras na sua assinatura${config.stripe.portalUrl ? html` em <a href="${config.stripe.portalUrl}" target="_blank" rel="noopener">Minha assinatura</a>` : ''} ou fale com a gente.</p>` : ''}`;
+  };
+
+  const accountBanner = accountBannerFor;
 
   // ----- Central de ajuda --------------------------------------------------
   const helpFile = fileURLToPath(new URL('../../public/ajuda.md', import.meta.url));
@@ -467,7 +524,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
     const { html: content, headings } = renderMarkdown(readFileSync(helpFile, 'utf8'));
     const toc = headings.filter((h) => h.level === 2 || h.level === 3);
     const body = html`
-      <a class="back" href="/admin">← Clientes</a>
+      <a class="back" href="/admin">← ${isCustomer() ? 'Meus números' : 'Clientes'}</a>
       <div class="page-head"><div><h1>Central de ajuda</h1><p class="sub">Como conectar a Meta, o Google Analytics e o Google Ads.</p></div></div>
       <div class="help-layout">
         <nav class="help-toc" aria-label="Nesta página">${toc.map((h) => html`<a class="${h.level === 3 ? 'sub' : ''}" href="#${h.id}">${h.text}</a>`)}</nav>
@@ -478,7 +535,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Lista de clientes -------------------------------------------------
   app.get('/admin', async (req, reply) => {
-    const clients = db.prepare('SELECT * FROM clients ORDER BY active DESC, name').all() as Client[];
+    const viewer = currentViewer();
+    const clients = (db.prepare('SELECT * FROM clients ORDER BY active DESC, name').all() as Client[]).filter((c) => canSee(viewer, c.id));
+    if (isCustomer(viewer)) return send(reply, layout('Meus números', customerHome(viewer, clients), { flash: flashOf(req) }));
     const items = clients.map((c) => ({ c, s: clientStats(db, c.id), failed: failedEvents(db, c.id) }));
     const total = items.reduce((a, { s }) => ({ leads: a.leads + s.leads, sales: a.sales + s.sales }), { leads: 0, sales: 0 });
     const revenueByCurrency = new Map<string, number>();
@@ -507,19 +566,35 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   // ----- Cadastro ----------------------------------------------------------
+  /** Cliente só adiciona número dentro do limite do plano e com a assinatura em dia. */
+  const customerCanAdd = (): boolean => {
+    const v = currentViewer();
+    if (!isCustomer(v)) return true;
+    const acc = v.account;
+    return !!acc && ['active', 'trialing'].includes(acc.status) && v.clientIds.size < acc.numbers_allowed;
+  };
+
   app.get('/admin/clients/new', async (_req, reply) => {
-    send(reply, layout('Novo cliente', html`<a class="back" href="/admin">← Clientes</a>
-      <div class="page-head"><div><h1>Novo cliente</h1><p class="sub">Só os dados do cliente são obrigatórios. Plataformas podem ser configuradas depois.</p></div></div>
+    if (!customerCanAdd()) return back(reply, '/admin', 'Erro: o seu plano não permite adicionar mais números.');
+    send(reply, layout('Novo cliente', html`<a class="back" href="/admin">← ${isCustomer() ? 'Meus números' : 'Clientes'}</a>
+      <div class="page-head"><div><h1>${isCustomer() ? 'Novo número' : 'Novo cliente'}</h1><p class="sub">Só o nome e o WhatsApp são obrigatórios. Meta e Google podem ser configurados depois.</p></div></div>
       ${clientForm(NEW_CLIENT_DEFAULTS, '/admin/clients', 'Cadastrar e ir para a instalação')}`));
   });
 
   app.post('/admin/clients', async (req, reply) => {
+    if (!customerCanAdd()) return back(reply, '/admin', 'Erro: o seu plano não permite adicionar mais números.');
+    const viewer = currentViewer();
     const data = readClientForm(req.body as Form);
+    // Cliente não escolhe a instância nem a conta: evita apontar para instâncias de outras empresas
+    if (isCustomer(viewer)) {
+      data.evolution_instance = '';
+      (data as Record<string, unknown>).account_id = viewer.account!.id;
+    }
     let slug = slugify(String(data.name)) || 'cliente';
     while (db.prepare('SELECT 1 FROM clients WHERE slug = ?').get(slug)) slug = `${slug}-${token(2).toLowerCase()}`;
     const full = {
       ...data,
-      evolution_instance: data.evolution_instance || `vz-${slug}`,
+      evolution_instance: data.evolution_instance || uniqueInstance(`vz-${slug}`),
       slug, webhook_token: token(), report_token: token(), api_token: token(),
     };
     const keys = Object.keys(full);
@@ -536,7 +611,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Visão geral -------------------------------------------------------
   app.get('/admin/clients/:id', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const s = clientStats(db, c.id);
     const recent = db
@@ -557,7 +632,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Conversas ---------------------------------------------------------
   app.get('/admin/clients/:id/contacts', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const qs = req.query as Form;
     const q = (qs.q || '').trim();
@@ -590,7 +665,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Vendas ------------------------------------------------------------
   app.get('/admin/clients/:id/sales', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const rows = db
       .prepare(
@@ -618,7 +693,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Envios (eventos) --------------------------------------------------
   app.get('/admin/clients/:id/events', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const status = ['error', 'pending', 'sent'].includes((req.query as Form).status || '') ? (req.query as Form).status! : '';
     const groups = loadEventGroups(db, c.id, status, 200);
@@ -638,7 +713,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Links -------------------------------------------------------------
   app.get('/admin/clients/:id/links', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const links = db
       .prepare(
@@ -674,7 +749,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Instalação --------------------------------------------------------
   app.get('/admin/clients/:id/setup', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const labels = db.prepare('SELECT name FROM labels WHERE client_id = ? ORDER BY name').all(c.id) as { name: string }[];
     const tagClick = db.prepare(`SELECT MAX(created_at) t FROM clicks WHERE client_id = ? AND origin = 'tag'`).get(c.id) as { t: number | null };
@@ -737,16 +812,17 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   // ----- Configurações -----------------------------------------------------
   app.get('/admin/clients/:id/edit', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     send(reply, clientPage(db, c, 'edit', clientForm(c, `/admin/clients/${c.id}`, 'Salvar alterações'), flashOf(req)));
   });
 
   app.post('/admin/clients/:id', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const data = readClientForm(req.body as Form, c);
-    if (!data.evolution_instance) data.evolution_instance = c.evolution_instance;
+    if (!data.evolution_instance || isCustomer()) data.evolution_instance = c.evolution_instance;
+    if (isCustomer()) data.active = c.active; // pausar/reativar é pela assinatura
     const sets = Object.keys(data).map((k) => `${k} = @${k}`).join(', ');
     try {
       db.prepare(`UPDATE clients SET ${sets} WHERE id = @id`).run({ ...data, id: c.id });
@@ -759,7 +835,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   // ----- Ações -------------------------------------------------------------
   app.post('/admin/contacts/:id/sale', async (req, reply) => {
     const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(Number((req.params as Form).id)) as Contact | undefined;
-    if (!contact) return notFound(reply);
+    if (!contact || !visible(contact.client_id)) return notFound(reply);
     const client = getClient(db, contact.client_id)!;
     const f = req.body as Form;
     const typed = parseMoney(f.value || '');
@@ -770,7 +846,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   app.post('/admin/contacts/:id/qualify', async (req, reply) => {
     const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(Number((req.params as Form).id)) as Contact | undefined;
-    if (!contact) return notFound(reply);
+    if (!contact || !visible(contact.client_id)) return notFound(reply);
     const client = getClient(db, contact.client_id)!;
     const done = markQualified(db, client, contact.id);
     const who = contact.push_name || formatPhone(contact.phone);
@@ -780,7 +856,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   app.post('/admin/sales/:id/delete', async (req, reply) => {
     const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(Number((req.params as Form).id)) as Sale | undefined;
-    if (!sale) return notFound(reply);
+    if (!sale || !visible(sale.client_id)) return notFound(reply);
     db.transaction(() => {
       // Envios que ainda não saíram são cancelados junto com a venda
       db.prepare(`DELETE FROM events WHERE sale_id = ? AND status IN ('pending','error')`).run(sale.id);
@@ -794,7 +870,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   app.post('/admin/events/:id/retry', async (req, reply) => {
     const ev = db.prepare('SELECT * FROM events WHERE id = ?').get(Number((req.params as Form).id)) as TrackEvent | undefined;
-    if (!ev) return notFound(reply);
+    if (!ev || !visible(ev.client_id)) return notFound(reply);
     const failed = db
       .prepare(`SELECT * FROM events WHERE client_id = ? AND event_id = ? AND status = 'error'`)
       .all(ev.client_id, ev.event_id) as TrackEvent[];
@@ -806,7 +882,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   app.post('/admin/clients/:id/links', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const f = req.body as Form;
     const t = (k: string) => (f[k] || '').trim() || null;
@@ -820,14 +896,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   app.post('/admin/links/:id/delete', async (req, reply) => {
     const l = db.prepare('SELECT * FROM tracking_links WHERE id = ?').get(Number((req.params as Form).id)) as TrackingLink | undefined;
-    if (!l) return notFound(reply);
+    if (!l || !visible(l.client_id)) return notFound(reply);
     db.prepare('DELETE FROM tracking_links WHERE id = ?').run(l.id);
     return back(reply, `/admin/clients/${l.client_id}/links`, 'Link excluído.');
   });
 
   // ----- Conexão do WhatsApp pela Evolution --------------------------------
   app.get('/admin/clients/:id/whatsapp/status', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return reply.code(404).send({ error: 'cliente não encontrado' });
     reply.header('Cache-Control', 'no-store');
     try {
@@ -841,7 +917,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
 
   /** Gera o código de pareamento para o número informado (recria a instância ainda não conectada). */
   app.post('/admin/clients/:id/whatsapp/pair', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return reply.code(404).send({ error: 'cliente não encontrado' });
     const number = normalizePhone(((req.body as Form) || {}).number || '');
     if (!number || number.length < 12) return { state: 'error', error: 'Informe o número com DDD.' };
@@ -860,7 +936,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   app.post('/admin/clients/:id/whatsapp/create', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     const setup = `/admin/clients/${c.id}/setup`;
     try {
@@ -874,7 +950,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   app.post('/admin/clients/:id/whatsapp/logout', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     try {
       await logoutInstance(c.evolution_instance);
@@ -885,7 +961,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   app.post('/admin/clients/:id/evolution-webhook', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     try {
       await setInstanceWebhook(c.evolution_instance, `${config.baseUrl}/webhooks/evolution/${c.webhook_token}`);
@@ -896,7 +972,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: DB): void {
   });
 
   app.post('/admin/clients/:id/sync-labels', async (req, reply) => {
-    const c = getClient(db, (req.params as Form).id);
+    const c = visibleClient((req.params as Form).id);
     if (!c) return notFound(reply);
     try {
       const labels = await fetchLabels(c.evolution_instance);

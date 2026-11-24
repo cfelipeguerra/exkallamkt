@@ -21,7 +21,9 @@ test('markdown: títulos com âncora, listas, tabela, citação e escape de HTML
 test('central de ajuda: abre no painel com Meta, GA4 e Google Ads', async () => {
   const app = await buildApp(openDb(':memory:'));
   const auth = { authorization: `Basic ${Buffer.from('admin:test').toString('base64')}` };
-  assert.equal((await app.inject({ method: 'GET', url: '/admin/ajuda' })).statusCode, 401);
+  const anon = await app.inject({ method: 'GET', url: '/admin/ajuda' });
+  assert.equal(anon.statusCode, 303);
+  assert.equal(anon.headers.location, '/entrar');
   const r = await app.inject({ method: 'GET', url: '/admin/ajuda', headers: auth });
   assert.equal(r.statusCode, 200);
   for (const id of ['meta', 'google-analytics-4', 'google-ads', 'problemas-comuns']) assert.match(r.body, new RegExp(`id="${id}"`));

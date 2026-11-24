@@ -85,6 +85,22 @@ Dica: comece com `DRY_RUN=true` para conferir os payloads no painel antes de env
 4. Instale a **tag** no site (direto no HTML ou via Google Tag Manager como HTML personalizado) e/ou crie **links rastreáveis**.
 5. Envie ao cliente o **link do relatório** (somente leitura, sem login).
 
+## Venda automática (Stripe + Resend)
+
+Fluxo sem intervenção da equipe: **pagamento no Stripe → webhook → conta, acesso e primeiro número criados → e-mail de boas-vindas com link de acesso**.
+
+- O cliente entra em `/entrar` só com o e-mail (link de acesso de uso único, sem senha) e vê apenas os próprios números, dentro do limite do plano (Essencial 1, Profissional 3, + números extras).
+- Cancelamento ou falta de pagamento pausa os números; reativação volta a ligar. Pagamento atrasado (`past_due`) não pausa de imediato.
+- A agência continua entrando com usuário e senha em `/admin?agencia=1` e vê todos os clientes.
+
+Configuração:
+1. **Resend**: verifique o domínio do remetente e crie uma API key → `RESEND_API_KEY`, `EMAIL_FROM`.
+2. **Stripe → Webhooks**: endpoint `$BASE_URL/webhooks/stripe` com os eventos `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` e `customer.subscription.deleted` → `STRIPE_WEBHOOK_SECRET`.
+3. **Stripe → Portal do cliente**: ative e copie o link de login → `STRIPE_PORTAL_URL` (menu "Minha assinatura").
+4. `NOTIFY_EMAIL` recebe um aviso a cada nova assinatura.
+
+Só são processados checkouts com `metadata.app = vendeuzap` (definido nos Payment Links), então outros produtos da mesma conta Stripe são ignorados.
+
 ## API
 
 ```bash
@@ -104,7 +120,9 @@ Para customizar widgets de WhatsApp no site, a tag expõe `Vendeuzap.whatsappUrl
 
 | Rota | Uso |
 |---|---|
-| `GET /admin` | Painel da agência (Basic Auth) |
+| `GET /admin` | Painel (agência com Basic Auth em `/admin?agencia=1`; cliente com link de acesso) |
+| `GET/POST /entrar`, `GET /entrar/:token`, `POST /sair` | Acesso do cliente por e-mail |
+| `POST /webhooks/stripe` | Webhook de assinaturas da Stripe |
 | `POST /webhooks/evolution/:token` | Webhook da Evolution (token por cliente) |
 | `GET /r/:slug` | Link rastreável → redireciona para `wa.me` |
 | `GET /t.js?c=<slug>` | Tag do site (`&inv=1` para código invisível) |
