@@ -16,6 +16,11 @@ export const config = {
   host: env('HOST', '0.0.0.0'),
   /** URL pública desta aplicação, usada para montar links e o webhook da Evolution. */
   baseUrl: env('BASE_URL', 'http://localhost:3000').replace(/\/$/, ''),
+  /** Sites que podem consultar a compra na página de obrigado */
+  siteOrigins: env('SITE_ORIGINS', 'https://www.vendeuzap.com.br,https://vendeuzap.com.br')
+    .split(',')
+    .map((v) => v.trim().replace(/\/$/, ''))
+    .filter(Boolean),
   dbPath: env('DB_PATH', isTest ? ':memory:' : './data/vendeuzap.db'),
 
   admin: {

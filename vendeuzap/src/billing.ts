@@ -11,7 +11,7 @@ import { config } from './config.js';
 import type { DB } from './db.js';
 import { now } from './db.js';
 import { type Email, newSubscriptionNotice, sendEmail, subscriptionEndedEmail, welcomeEmail } from './email.js';
-import { normalizePhone, slugify, token } from './lib/util.js';
+import { normalizePhone, sha256, slugify, token } from './lib/util.js';
 import type { Account, User } from './types.js';
 
 const SIGNATURE_TOLERANCE_S = 300;
@@ -99,6 +99,22 @@ function onCheckoutCompleted(db: DB, s: any): Outcome {
   const whatsField = (s.custom_fields || []).find((f: any) => f.key === 'whatsapp');
   const whatsapp = normalizePhone(whatsField?.text?.value || '') || normalizePhone(d.phone || '') || null;
   const plan = s.metadata?.plano || 'essencial';
+
+  // Dados da compra para a página de obrigado (sem dados pessoais em texto aberto)
+  if (s.id) db.prepare(
+    `INSERT OR IGNORE INTO checkouts (session_id, amount_total, currency, plan, cycle, email_sha256, phone_sha256, phone_e164_sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    String(s.id || ''),
+    (Number(s.amount_total) || 0) / 100,
+    String(s.currency || 'brl').toUpperCase(),
+    plan,
+    s.metadata?.ciclo ?? null,
+    sha256(email),
+    // Meta: só dígitos com DDI; Google: formato E.164 (com +)
+    whatsapp ? sha256(whatsapp) : null,
+    whatsapp ? sha256(`+${whatsapp}`) : null,
+  );
 
   const account = upsertAccount(db, subscriptionId, {
     plan,

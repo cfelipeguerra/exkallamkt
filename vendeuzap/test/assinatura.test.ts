@@ -23,7 +23,8 @@ async function stripe(type: string, object: unknown, opts: { secret?: string; id
 }
 
 const checkout = (over: Record<string, unknown> = {}) => ({
-  object: 'checkout.session', mode: 'subscription', subscription: 'sub_1', customer: 'cus_1',
+  id: 'cs_test_a1B2c3D4e5F6g7', object: 'checkout.session', mode: 'subscription', subscription: 'sub_1', customer: 'cus_1',
+  amount_total: 54700, currency: 'brl',
   metadata: { app: 'vendeuzap', plano: 'profissional', ciclo: 'mensal' },
   customer_details: { email: 'Ana@Otica.com.br', name: 'Ana Souza', business_name: 'Ótica Visão', phone: '+5511900001111' },
   custom_fields: [{ key: 'whatsapp', text: { value: '(11) 98888-7777' } }],
@@ -174,4 +175,24 @@ test('cancelamento pausa os números; pagamento em dia reativa', async () => {
   await stripe('customer.subscription.updated', subscription('active', 2));
   active = db.prepare('SELECT DISTINCT active FROM clients WHERE account_id IS NOT NULL').all() as { active: number }[];
   assert.deepEqual(active, [{ active: 1 }]);
+});
+
+test('página de obrigado: consulta o valor real da compra pelo ID do checkout', async () => {
+  const get = (id: string, origin = 'https://www.vendeuzap.com.br') =>
+    app.inject({ method: 'GET', url: `/api/checkout/${id}`, headers: { origin } });
+  const r = await get('cs_test_a1B2c3D4e5F6g7');
+  assert.equal(r.statusCode, 200, r.body);
+  assert.equal(r.headers['access-control-allow-origin'], 'https://www.vendeuzap.com.br');
+  const j = r.json();
+  assert.equal(j.value, 547);
+  assert.equal(j.currency, 'BRL');
+  assert.equal(j.plan, 'profissional');
+  assert.match(j.sha256_email_address, /^[a-f0-9]{64}$/);
+  assert.ok(!r.body.includes('otica.com.br'), 'sem e-mail em texto aberto');
+  assert.ok(!r.body.includes('988887777'), 'sem telefone em texto aberto');
+  // Webhook ainda não chegou: 404 para a página tentar de novo
+  assert.equal((await get('cs_live_naoExisteAinda123')).statusCode, 404);
+  assert.equal((await get('qualquer-coisa')).statusCode, 400);
+  // Outros sites não recebem permissão de CORS
+  assert.equal((await get('cs_test_a1B2c3D4e5F6g7', 'https://outro.site')).headers['access-control-allow-origin'], undefined);
 });

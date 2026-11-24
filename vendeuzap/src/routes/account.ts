@@ -26,6 +26,37 @@ function loginPage(message: string | null, kind: 'ok' | 'err' | null, email = ''
 }
 
 export function registerAccountRoutes(app: FastifyInstance, db: DB): void {
+  /**
+   * Página de obrigado do site: devolve o valor real da compra para o evento de purchase.
+   * O ID da sessão do checkout só é conhecido por quem pagou; a resposta não traz dados pessoais em texto aberto.
+   */
+  app.get('/api/checkout/:id', async (req, reply) => {
+    const origin = String(req.headers.origin || '');
+    // Só o site do Vendeuzap pode ler a resposta no navegador (substitui o CORS aberto do app)
+    if (config.siteOrigins.includes(origin)) reply.header('Access-Control-Allow-Origin', origin).header('Vary', 'Origin');
+    else reply.removeHeader('Access-Control-Allow-Origin');
+    reply.header('Cache-Control', 'no-store');
+    const id = String((req.params as { id: string }).id || '');
+    if (!/^cs_(live|test)_[A-Za-z0-9]{10,}$/.test(id)) return reply.code(400).send({ ok: false });
+    const row = db.prepare('SELECT * FROM checkouts WHERE session_id = ?').get(id) as
+      | { amount_total: number; currency: string; plan: string | null; cycle: string | null; email_sha256: string | null; phone_sha256: string | null; phone_e164_sha256: string | null }
+      | undefined;
+    // 404 enquanto o webhook da Stripe ainda não chegou: a página tenta de novo
+    if (!row) return reply.code(404).send({ ok: false });
+    return {
+      ok: true,
+      transaction_id: id,
+      value: row.amount_total,
+      currency: row.currency,
+      plan: row.plan,
+      cycle: row.cycle,
+      // Formatos aceitos pelo Google (conversões otimizadas) e pela Meta (correspondência avançada)
+      sha256_email_address: row.email_sha256,
+      sha256_phone_number: row.phone_e164_sha256,
+      meta_ph: row.phone_sha256,
+    };
+  });
+
   app.get('/entrar', async (req, reply) => {
     if (customerViewer(db, req)) return reply.redirect('/admin', 303);
     const q = req.query as { erro?: string };

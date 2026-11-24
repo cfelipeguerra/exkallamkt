@@ -169,6 +169,20 @@ const MIGRATIONS: string[] = [
   ALTER TABLE clients ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL;
   CREATE INDEX clients_account ON clients(account_id);
   `,
+  // 6: compras confirmadas, lidas pela página de obrigado para o evento de purchase
+  `
+  CREATE TABLE checkouts (
+    session_id TEXT PRIMARY KEY,
+    amount_total REAL NOT NULL,
+    currency TEXT NOT NULL,
+    plan TEXT,
+    cycle TEXT,
+    email_sha256 TEXT,
+    phone_sha256 TEXT,
+    phone_e164_sha256 TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  `,
 ];
 
 export function openDb(path = config.dbPath): DB {
